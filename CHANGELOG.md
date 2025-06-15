@@ -4,6 +4,7 @@
 * Fix "Memory updated" event emitter not shown
 * Disable memory limitation in amounts
 * Fix memory identification to use all memories for analysis
+* Remove unnecessary limits
 
 ### 2.0.2: 2025-06-15
 

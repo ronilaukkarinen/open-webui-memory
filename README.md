@@ -1,8 +1,8 @@
 # 🧠 Auto memory retrieval and storage
 
-Automatically identify, retrieve and store memories from user conversations in Open WebUI.
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-1.1.0-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
 
-This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
+Automatically identify, retrieve and store memories from user conversations in Open WebUI. Successor to [Auto Memory](https://github.com/ronilaukkarinen/open-webui-auto-memory). This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
 
 ## Features
 

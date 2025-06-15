@@ -1,0 +1,35 @@
+# 🧠 Auto memory retrieval and storage
+
+Automatically identify, retrieve and store memories from user conversations in Open WebUI.
+
+This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
+
+## Features
+
+- **Automatic memory identification**: Extracts important user information from conversations
+- **Smart memory retrieval**: Finds relevant memories based on current context
+- **Memory operations**: Support for creating, updating, and deleting memories
+- **Flexible API support**: Works with OpenAI API, Ollama, and other compatible endpoints
+- **Contextual processing**: Uses AI to determine memory relevance and importance
+- **User privacy controls**: Configurable settings for memory processing visibility
+
+## Installation
+
+1. Go to **Settings → Functions** and add the contents of `auto_memory_retrieval_and_storage.py` file, save
+2. If you want to use OpenAI API, you need to add your API key to the **OpenAI API key** field
+3. If you want to use a local model, use Ollama API:
+    - Set **OpenAI API URL** to `http://localhost:11434/v1`
+    - Set **OpenAI API key** to `ollama`
+    - Set **Model** to the model you want to use (you can see the list with command `ollama list`)
+
+## Examples
+
+**User input**: "I live in Central street 45 and I love sushi"
+**Stored memories**:
+- Location: "User lives in Central street 45"
+- Preference: "User loves sushi"
+
+**User input**: "Remember that my doctor's appointment is next Tuesday at 3pm" 
+**Stored memory**: "Doctor's appointment scheduled for next Tuesday at 2025-01-14 15:00:00"
+
+**Context retrieval**: When user asks "What's my address?", the filter automatically retrieves and provides the stored location information.

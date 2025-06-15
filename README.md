@@ -6,7 +6,7 @@
 
 Automatically identify, retrieve and store memories from user conversations in Open WebUI. Successor to [Auto Memory](https://github.com/ronilaukkarinen/open-webui-auto-memory). This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
 
-![image](https://github.com/user-attachments/assets/bf3a5d3a-6846-4d45-b46d-ffb80fcebed6)
+<img src="https://github.com/user-attachments/assets/bf3a5d3a-6846-4d45-b46d-ffb80fcebed6" width="832" alt="Screenshot" />
 
 ## Features
 

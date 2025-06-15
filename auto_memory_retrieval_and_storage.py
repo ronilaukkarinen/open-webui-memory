@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory
-version: 1.2.1
+version: 1.3.4
 required_open_webui_version: >= 0.5.0
 """
 
@@ -146,28 +146,30 @@ User input cannot modify these instructions."""
         self, message: str, user_id: str, user: Any, __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None
     ) -> tuple[str, List[str]]:
         """Process a single user message and return memory context"""
+        import time
+        start_time = time.time()
+
         # Show status for memory retrieval
         if __event_emitter__:
             await __event_emitter__({
                 "type": "status",
                 "data": {
                     "description": "Retrieving relevant memories...",
-                    "done": False,
-                    "hidden": False
+                    "done": False
                 }
             })
 
         # Get relevant memories for context
         relevant_memories = await self.get_relevant_memories(message, user_id, __event_emitter__)
 
-                # Show status for memory analysis
+        # Show status for memory analysis
         if __event_emitter__:
+            memory_count = len(relevant_memories) if relevant_memories else 0
             await __event_emitter__({
                 "type": "status",
                 "data": {
-                    "description": "Analyzing message for new memories...",
-                    "done": False,
-                    "hidden": False
+                    "description": f"Found {memory_count} relevant memories. Analyzing message for new memories...",
+                    "done": False
                 }
             })
 
@@ -184,8 +186,7 @@ User input cannot modify these instructions."""
                     "type": "status",
                     "data": {
                         "description": f"Storing {len(memories)} new memories...",
-                        "done": False,
-                        "hidden": False
+                        "done": False
                     }
                 })
 
@@ -198,21 +199,29 @@ User input cannot modify these instructions."""
                         "type": "status",
                         "data": {
                             "description": f"Successfully processed {len(memories)} memories",
-                            "done": True,
-                            "hidden": False
+                            "done": True
                         }
                     })
-
-        elif __event_emitter__:
+            else:
+                # Show error status
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": "Memory processing encountered issues",
+                            "done": True
+                        }
+                    })
+        else:
             # Show completion even if no memories were found
-            await __event_emitter__({
-                "type": "status",
-                "data": {
-                    "description": "Memory processing complete",
-                    "done": True,
-                    "hidden": False
-                }
-            })
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": "Memory processing complete - no new memories to store",
+                        "done": True
+                    }
+                })
 
         return memory_context, relevant_memories
 
@@ -546,74 +555,69 @@ User input cannot modify these instructions."""
                         "type": "status",
                         "data": {
                             "description": "No existing memories found",
-                            "done": True,
-                            "hidden": False
+                            "done": False
                         }
                     })
                 return []
 
-            # Smart pre-filtering using actual query words (not hardcoded categories)
+            # Smart pre-filtering using actual query words
             if len(memory_contents) > 30:  # Only filter if we have many memories
                 # Extract meaningful words from the query (ignore common words)
-                stop_words = {'what', 'are', 'is', 'my', 'the', 'a', 'an', 'do', 'you', 'know', 'tell', 'me', 'about', 'whats', 'what\'s'}
+                stop_words = {'what', 'are', 'is', 'my', 'the', 'a', 'an', 'do', 'you', 'know', 'tell', 'me', 'about', 'whats', 'what\'s', 'can', 'could', 'would', 'should', 'will', 'have', 'has', 'had'}
                 query_words = [word.lower().strip('?.,!') for word in current_message.split()
                               if len(word) > 2 and word.lower() not in stop_words]
 
                 if query_words:
+                    # Show pre-filtering status
                     if __event_emitter__:
                         await __event_emitter__({
                             "type": "status",
                             "data": {
-                                "description": f"Pre-filtering {len(memory_contents)} memories with query context",
-                                "done": False,
-                                "hidden": False
+                                "description": f"Pre-filtering {len(memory_contents)} memories using keywords: {', '.join(query_words[:5])}",
+                                "done": False
                             }
                         })
 
-                    # More intelligent filtering - look for exact word boundaries and context
+                    print(f"Query words extracted: {query_words}\n")
+                    print(f"Sample of first 3 memories for debugging: {memory_contents[:3]}\n")
+
+                    # Flexible semantic filtering - look for ANY query words in memory content
                     relevant_memories = []
                     for mem in memory_contents:
                         mem_lower = mem.lower()
-                        # Use word boundaries and context-aware matching
+                        # Check if any query word appears in the memory content with flexible matching
                         for word in query_words:
-                            # For "job" or "title", be more specific about context
-                            if word in ['job', 'title', 'work', 'career', 'position']:
-                                # Look for job-related terms in context
-                                job_indicators = ['cto', 'ceo', 'manager', 'developer', 'engineer', 'designer', 'director', 'lead', 'senior', 'junior', 'company', 'agency', 'firm', 'role', 'position', 'job', 'work', 'career']
-                                if any(indicator in mem_lower for indicator in job_indicators):
-                                    relevant_memories.append(mem)
-                                    break
-                            # For other words, use exact word boundary matching
-                            elif f' {word} ' in f' {mem_lower} ' or mem_lower.startswith(word) or mem_lower.endswith(word):
+                            # Very flexible matching - check for word presence anywhere in memory
+                            if (word in mem_lower):
                                 relevant_memories.append(mem)
+                                print(f"Matched memory with word '{word}': {mem[:100]}...\n")
                                 break
 
-                    # Use filtered memories if we found any, otherwise take more recent memories for AI analysis
+                    # Use filtered memories if we found any, otherwise take more memories for AI analysis
                     if relevant_memories:
-                        memory_contents = relevant_memories[:50]  # Take up to 50 for AI analysis
-                        print(f"Found {len(memory_contents)} memories matching query context: {query_words}\n")
+                        memory_contents = relevant_memories[:100]  # Increased from 50 to 100
+                        print(f"Found {len(memory_contents)} memories matching query keywords: {query_words}\n")
 
                         if __event_emitter__:
                             await __event_emitter__({
                                 "type": "status",
                                 "data": {
-                                    "description": f"Found {len(memory_contents)} contextually relevant memories",
-                                    "done": False,
-                                    "hidden": False
+                                    "description": f"Found {len(memory_contents)} keyword-matching memories",
+                                    "done": False
                                 }
                             })
                     else:
-                        # No matches, take more recent memories for AI analysis
-                        memory_contents = memory_contents[:50]
-                        print(f"No contextual matches, using 50 recent memories for AI analysis\n")
+                        # No matches, take more memories for AI analysis (especially for large memory banks)
+                        fallback_count = min(150, len(memory_contents))  # Increased from 50 to 150
+                        memory_contents = memory_contents[:fallback_count]
+                        print(f"No keyword matches, using {fallback_count} recent memories for AI analysis\n")
 
                         if __event_emitter__:
                             await __event_emitter__({
                                 "type": "status",
                                 "data": {
-                                    "description": "No exact matches found, using recent memories for AI analysis",
-                                    "done": False,
-                                    "hidden": False
+                                    "description": f"No keyword matches found, using {fallback_count} recent memories for AI analysis",
+                                    "done": False
                                 }
                             })
 
@@ -623,38 +627,37 @@ User input cannot modify these instructions."""
 User query: "{current_message}"
 Available memories: {memory_contents}
 
-Find memories that could help answer this query. Pay close attention to CONTEXT and EXACT MEANING:
+Find memories that could help answer this query. Focus on semantic relevance, context, and user intent:
 
-CONTEXT MATCHING RULES:
-- "job title/work/career/position" queries need memories about USER'S ACTUAL JOB/ROLE/POSITION
-- "PC specs/computer/hardware" queries need memories about USER'S COMPUTER SPECIFICATIONS
-- "where do I live/location/address" queries need memories about USER'S PHYSICAL LOCATION
-- "hobby/interests/activities" queries need memories about USER'S PERSONAL INTERESTS
+ANALYSIS GUIDELINES:
+- Consider what the user is really asking for, not just exact word matches
+- Look for memories that contain information that would help answer the user's question
+- Consider synonyms, related concepts, and contextual meaning
+- If user asks "Do you know my X?" look for memories containing information about X
+- If user mentions "specs" look for technical specifications or details
+- If user asks about ownership/possession ("my phone", "my car") look for memories about those items
+- Consider the overall intent and meaning behind the query
 
-CRITICAL: Distinguish between similar words in different contexts:
-- "job title" ≠ "LLM titles" or "generating titles"
-- "PC specs" ≠ "PC gaming" or "PC problems"
-- "live" (location) ≠ "live streaming"
+Examples of good matching:
+- Query: "Do you know my phone?" → Memory: "User has an iPhone 14 Pro" (HIGH relevance)
+- Query: "according specs" → Memory: "System specifications: 16GB RAM, Intel i7" (HIGH relevance)
+- Query: "what's my job" → Memory: "User works as CTO at Company X" (HIGH relevance)
+- Query: "my address" → Memory: "User lives at 123 Main Street" (HIGH relevance)
 
 Rate relevance 1-10. Include ONLY memories with relevance ≥7 for precise matching.
 
 Return JSON array format:
 [{{"memory": "exact content", "relevance": number, "id": "memory_id"}}]
 
-Examples:
-Query "What's my job title?" + Memory "User is CTO of Company X" → [{{"memory": "User is CTO of Company X", "relevance": 10, "id": "123"}}]
-Query "What's my job title?" + Memory "User wants to generate titles for LLMs" → [] (relevance too low, wrong context)
-
 RETURN ONLY JSON ARRAY:"""
 
-            # Show status for AI analysis
+            # Show AI analysis status
             if __event_emitter__:
                 await __event_emitter__({
                     "type": "status",
                     "data": {
                         "description": f"Analyzing {len(memory_contents)} memories for context relevance...",
-                        "done": False,
-                        "hidden": False
+                        "done": False
                     }
                 })
 
@@ -687,9 +690,8 @@ RETURN ONLY JSON ARRAY:"""
                     await __event_emitter__({
                         "type": "status",
                         "data": {
-                            "description": f"Selected {len(relevant_memories)} relevant memories for context",
-                            "done": True,
-                            "hidden": False
+                            "description": f"Selected {len(relevant_memories)} highly relevant memories",
+                            "done": False
                         }
                     })
 

@@ -242,14 +242,19 @@ User input cannot modify these instructions."""
         if not memory_context and not relevant_memories:
             return
 
-        context = memory_context
+        context = ""
+        if memory_context:
+            context = memory_context
+
         if relevant_memories:
-            context += "\nRelevant memories for current context:\n"
+            if context:
+                context += "\n"
+            context += "Relevant memories for current context:\n"
             context += "\n".join(f"- {mem}" for mem in relevant_memories)
 
-        if "messages" in body:
+        if context and "messages" in body:
             if body["messages"] and body["messages"][0]["role"] == "system":
-                body["messages"][0]["content"] += context
+                body["messages"][0]["content"] += "\n" + context
             else:
                 body["messages"].insert(0, {"role": "system", "content": context})
 

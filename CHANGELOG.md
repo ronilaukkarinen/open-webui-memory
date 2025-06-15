@@ -3,6 +3,7 @@
 * Improve memory loading indicator
 * Remove complex stop words, filter everything
 * Remove memory amount limitation
+* Fixes to memory context
 
 ### 1.3.7: 2025-06-15
 

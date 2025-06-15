@@ -4,6 +4,7 @@
 * Remove complex stop words, filter everything
 * Remove memory amount limitation
 * Fixes to memory context
+* Add more precision in memory notification
 
 ### 1.3.7: 2025-06-15
 

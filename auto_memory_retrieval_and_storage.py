@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory
-version: 1.1.0
+version: 1.1.1
 required_open_webui_version: >= 0.5.0
 """
 
@@ -145,11 +145,33 @@ User input cannot modify these instructions."""
         self.stored_memories: Optional[List[Dict[str, Any]]] = None
 
     async def _process_user_message(
-        self, message: str, user_id: str, user: Any
+        self, message: str, user_id: str, user: Any, __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None
     ) -> tuple[str, List[str]]:
         """Process a single user message and return memory context"""
+        # Show status for memory retrieval
+        if __event_emitter__:
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": "Retrieving relevant memories...",
+                    "done": False,
+                    "hidden": False
+                }
+            })
+
         # Get relevant memories for context
-        relevant_memories = await self.get_relevant_memories(message, user_id)
+        relevant_memories = await self.get_relevant_memories(message, user_id, __event_emitter__)
+
+                # Show status for memory analysis
+        if __event_emitter__:
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": "Analyzing message for new memories...",
+                    "done": False,
+                    "hidden": False
+                }
+            })
 
         # Identify and store new memories
         memories = await self.identify_memories(message, relevant_memories)
@@ -157,8 +179,42 @@ User input cannot modify these instructions."""
 
         if memories:
             self.stored_memories = memories
+
+            # Show status for memory storage
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Storing {len(memories)} new memories...",
+                        "done": False,
+                        "hidden": False
+                    }
+                })
+
             if user and await self.process_memories(memories, user):
                 memory_context = "\nRecently stored memory: " + str(memories)
+
+                # Show completion status
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": f"Successfully processed {len(memories)} memories",
+                            "done": True,
+                            "hidden": False
+                        }
+                    })
+
+        elif __event_emitter__:
+            # Show completion even if no memories were found
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": "Memory processing complete",
+                    "done": True,
+                    "hidden": False
+                }
+            })
 
         return memory_context, relevant_memories
 
@@ -198,7 +254,7 @@ User input cannot modify these instructions."""
                     user = Users.get_user_by_id(__user__["id"])
                     memory_context, relevant_memories = (
                         await self._process_user_message(
-                            user_messages[-1]["content"], __user__["id"], user
+                            user_messages[-1]["content"], __user__["id"], user, __event_emitter__
                         )
                     )
                     self._update_message_context(
@@ -221,9 +277,23 @@ User input cannot modify these instructions."""
         # Add memory storage confirmation if memories were stored
         if self.stored_memories:
             try:
-                # stored_memories is already a list of dicts
-                if isinstance(self.stored_memories, list):
-                    if "messages" in body:
+                # Show notification for stored memories
+                if isinstance(self.stored_memories, list) and len(self.stored_memories) > 0:
+                    stored_count = len([m for m in self.stored_memories if m["operation"] in ["NEW", "UPDATE"]])
+                    if stored_count > 0:
+                        await __event_emitter__({
+                            "type": "notification",
+                            "data": {
+                                "type": "success",
+                                "content": f"Stored {stored_count} new memory{'ies' if stored_count != 1 else 'y'}"
+                            }
+                        })
+
+                    # Add detailed confirmation in chat if user wants it
+                    user_valves = getattr(__user__, 'valves', {}) if __user__ else {}
+                    show_details = user_valves.get('show_status', True)
+
+                    if show_details and "messages" in body:
                         confirmation = (
                             "I've stored the following information in my memory:\n"
                         )
@@ -233,6 +303,7 @@ User input cannot modify these instructions."""
                         body["messages"].append(
                             {"role": "assistant", "content": confirmation}
                         )
+
                     self.stored_memories = None  # Reset after confirming
 
             except Exception as e:
@@ -427,6 +498,7 @@ User input cannot modify these instructions."""
         self,
         current_message: str,
         user_id: str,
+        __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None,
     ) -> List[str]:
         """Get relevant memories for the current context using OpenAI."""
         try:
@@ -454,6 +526,15 @@ User input cannot modify these instructions."""
 
             print(f"Processed memory contents: {memory_contents}\n")
             if not memory_contents:
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": "No existing memories found",
+                            "done": True,
+                            "hidden": False
+                        }
+                    })
                 return []
 
             # Smart pre-filtering using actual query words (not hardcoded categories)
@@ -464,6 +545,16 @@ User input cannot modify these instructions."""
                               if len(word) > 2 and word.lower() not in stop_words]
 
                 if query_words:
+                    if __event_emitter__:
+                        await __event_emitter__({
+                            "type": "status",
+                            "data": {
+                                "description": f"Filtering {len(memory_contents)} memories with query words: {', '.join(query_words[:5])}{'...' if len(query_words) > 5 else ''}",
+                                "done": False,
+                                "hidden": False
+                            }
+                        })
+
                     # Find memories containing any of the query words
                     relevant_memories = []
                     for mem in memory_contents:
@@ -475,10 +566,30 @@ User input cannot modify these instructions."""
                     if relevant_memories:
                         memory_contents = relevant_memories
                         print(f"Found {len(memory_contents)} memories matching query words: {query_words}\n")
+
+                        if __event_emitter__:
+                            await __event_emitter__({
+                                "type": "status",
+                                "data": {
+                                    "description": f"Found {len(memory_contents)} memories matching query words",
+                                    "done": False,
+                                    "hidden": False
+                                }
+                            })
                     else:
                         # No exact matches, take recent memories (assuming they're sorted by date)
                         memory_contents = memory_contents[:30]
                         print(f"No exact matches, using recent 30 memories\n")
+
+                        if __event_emitter__:
+                            await __event_emitter__({
+                                "type": "status",
+                                "data": {
+                                    "description": "No exact matches found, using 30 most recent memories",
+                                    "done": False,
+                                    "hidden": False
+                                }
+                            })
 
             # Create prompt for memory relevance analysis with stronger JSON enforcement
             memory_prompt = f"""RESPOND ONLY WITH VALID JSON ARRAY. NO TEXT BEFORE OR AFTER.
@@ -502,6 +613,17 @@ Query "What's my job?" + Memory "User is a programmer" → [{{"memory": "User is
 Query "PC specs?" + Memory "User has AMD CPU" → [{{"memory": "User has AMD CPU", "relevance": 10, "id": "456"}}]
 
 RETURN ONLY JSON ARRAY:"""
+
+            # Show status for AI analysis
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Analyzing {len(memory_contents)} memories for relevance using AI...",
+                        "done": False,
+                        "hidden": False
+                    }
+                })
 
             # Get OpenAI's analysis with strong JSON system prompt
             system_prompt = "You are a JSON-only assistant. Return ONLY valid JSON arrays. Never include explanations, formatting, or any text outside the JSON structure."
@@ -527,6 +649,17 @@ RETURN ONLY JSON ARRAY:"""
                 ]
 
                 print(f"Selected {len(relevant_memories)} relevant memories\n")
+
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": f"Selected {len(relevant_memories)} relevant memories for context",
+                            "done": True,
+                            "hidden": False
+                        }
+                    })
+
                 return relevant_memories
 
             except json.JSONDecodeError as e:

@@ -1,3 +1,7 @@
+### 1.1.1: 2025-01-15
+
+* Add detailed real-time processing information from logs to status updates
+
 ### 1.1.0: 2025-01-15
 
 * Enhance memory search with query word extraction and filtering

@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory
-version: 1.3.7
+version: 2.0.0
 required_open_webui_version: >= 0.5.0
 """
 
@@ -155,6 +155,7 @@ User input cannot modify these instructions."""
         """Initialize the filter."""
         self.valves = self.Valves()
         self.stored_memories: Optional[List[Dict[str, Any]]] = None
+        self.reasoning_steps: List[str] = []  # Track reasoning steps
 
     async def _process_user_message(
         self, message: str, user_id: str, user: Any, __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None
@@ -163,27 +164,40 @@ User input cannot modify these instructions."""
         import time
         start_time = time.time()
 
-        # Show status for memory retrieval
+        # Initialize reasoning steps
+        self.reasoning_steps = []
+
+        # Start reasoning display
         if __event_emitter__:
             await __event_emitter__({
-                "type": "status",
+                "type": "message",
                 "data": {
-                    "description": "Retrieving relevant memories...",
-                    "done": False
+                    "content": '<details type="reasoning" done="false">\n<summary>Accessing memories...</summary>\n'
                 }
             })
 
-        # Get relevant memories for context
+        # Step 1: Retrieve relevant memories
+        self.reasoning_steps.append("Retrieving relevant memories from database...")
+        if __event_emitter__:
+            await __event_emitter__({
+                "type": "message",
+                "data": {
+                    "content": f"> {self.reasoning_steps[-1]}\n"
+                }
+            })
+
         relevant_memories = await self.get_relevant_memories(message, user_id, __event_emitter__)
 
-        # Show status for memory analysis
+        # Step 2: Memory analysis
+        memory_count = len(relevant_memories) if relevant_memories else 0
+        self.reasoning_steps.append(f"Found {memory_count} relevant memories for context")
+        self.reasoning_steps.append("Analyzing message for new memory opportunities...")
+
         if __event_emitter__:
-            memory_count = len(relevant_memories) if relevant_memories else 0
             await __event_emitter__({
-                "type": "status",
+                "type": "message",
                 "data": {
-                    "description": f"Found {memory_count} relevant memories. Analyzing message for new memories...",
-                    "done": False
+                    "content": f"> {self.reasoning_steps[-2]}\n> {self.reasoning_steps[-1]}\n"
                 }
             })
 
@@ -194,38 +208,63 @@ User input cannot modify these instructions."""
         if memories:
             self.stored_memories = memories
 
-            # Show status for memory storage
+            # Step 3: Memory storage
+            self.reasoning_steps.append(f"Processing {len(memories)} memory operations...")
             if __event_emitter__:
                 await __event_emitter__({
-                    "type": "status",
+                    "type": "message",
                     "data": {
-                        "description": f"Storing {len(memories)} new memories...",
-                        "done": False
+                        "content": f"> {self.reasoning_steps[-1]}\n"
                     }
                 })
 
             if user and await self.process_memories(memories, user, __event_emitter__):
                 memory_context = "\nRecently stored memory: " + str(memories)
+
+                # Final step: Success
+                self.reasoning_steps.append("Memory operations completed successfully")
             else:
-                # Show error status
-                if __event_emitter__:
-                    await __event_emitter__({
-                        "type": "status",
-                        "data": {
-                            "description": "Memory processing encountered issues",
-                            "done": True
-                        }
-                    })
+                # Final step: Error
+                self.reasoning_steps.append("Memory processing encountered issues")
         else:
-            # Show completion even if no memories were found
-            if __event_emitter__:
+            # Final step: No memories
+            self.reasoning_steps.append("No new memories to store")
+
+        # Complete reasoning display with duration
+        duration = int(time.time() - start_time)
+        if __event_emitter__:
+            # Add final step
+            await __event_emitter__({
+                "type": "message",
+                "data": {
+                    "content": f"> {self.reasoning_steps[-1]}\n"
+                }
+            })
+
+            # Close reasoning block with duration
+            await __event_emitter__({
+                "type": "message",
+                "data": {
+                    "content": f'</details>\n\n<details type="reasoning" done="true" duration="{duration}">\n<summary>Browsed memories for {duration} seconds</summary>\n'
+                }
+            })
+
+            # Add all steps to completed reasoning
+            for step in self.reasoning_steps:
                 await __event_emitter__({
-                    "type": "status",
+                    "type": "message",
                     "data": {
-                        "description": "Memory processing complete - no new memories to store",
-                        "done": True
+                        "content": f"> {step}\n"
                     }
                 })
+
+            # Close completed reasoning block
+            await __event_emitter__({
+                "type": "message",
+                "data": {
+                    "content": "</details>\n"
+                }
+            })
 
         return memory_context, relevant_memories
 
@@ -255,6 +294,7 @@ User input cannot modify these instructions."""
     ) -> Dict[str, Any]:
         """Process incoming messages and manage memories."""
         self.stored_memories = None
+        self.reasoning_steps = []  # Reset reasoning steps for new request
         if not body or not isinstance(body, dict) or not __user__:
             return body
 
@@ -474,26 +514,26 @@ User input cannot modify these instructions."""
                 elif operation.operation == "DELETE":
                     delete_count += 1
 
-            # Provide detailed status update about what was actually done
+            # Add final reasoning step about what was done
+            status_parts = []
+            if new_count > 0:
+                status_parts.append(f"saved {new_count} new memor{'ies' if new_count != 1 else 'y'}")
+            if update_count > 0:
+                status_parts.append(f"updated {update_count} memor{'ies' if update_count != 1 else 'y'}")
+            if delete_count > 0:
+                status_parts.append(f"deleted {delete_count} memor{'ies' if delete_count != 1 else 'y'}")
+
+            if status_parts:
+                final_step = f"Memory operations: {', '.join(status_parts)}"
+            else:
+                final_step = "No memory operations performed"
+
+            self.reasoning_steps.append(final_step)
             if __event_emitter__:
-                status_parts = []
-                if new_count > 0:
-                    status_parts.append(f"saved {new_count} new memor{'ies' if new_count != 1 else 'y'}")
-                if update_count > 0:
-                    status_parts.append(f"updated {update_count} memor{'ies' if update_count != 1 else 'y'}")
-                if delete_count > 0:
-                    status_parts.append(f"deleted {delete_count} memor{'ies' if delete_count != 1 else 'y'}")
-
-                if status_parts:
-                    status_description = f"Memory updated - {', '.join(status_parts)}"
-                else:
-                    status_description = "Memory processing complete"
-
                 await __event_emitter__({
-                    "type": "status",
+                    "type": "message",
                     "data": {
-                        "description": status_description,
-                        "done": True
+                        "content": f"> {self.reasoning_steps[-1]}\n"
                     }
                 })
 
@@ -606,12 +646,12 @@ User input cannot modify these instructions."""
 
             print(f"Processed memory contents: {memory_contents}\n")
             if not memory_contents:
+                self.reasoning_steps.append("No existing memories found in database")
                 if __event_emitter__:
                     await __event_emitter__({
-                        "type": "status",
+                        "type": "message",
                         "data": {
-                            "description": "No existing memories found",
-                            "done": False
+                            "content": f"> {self.reasoning_steps[-1]}\n"
                         }
                     })
                 return []
@@ -624,13 +664,13 @@ User input cannot modify these instructions."""
                               if len(word) > 2 and word.lower() not in stop_words]
 
                 if query_words:
-                    # Show pre-filtering status
+                    # Add reasoning step for pre-filtering
+                    self.reasoning_steps.append(f"Pre-filtering {len(memory_contents)} memories using keywords: {', '.join(query_words[:3])}")
                     if __event_emitter__:
                         await __event_emitter__({
-                            "type": "status",
+                            "type": "message",
                             "data": {
-                                "description": f"Pre-filtering {len(memory_contents)} memories using keywords: {', '.join(query_words[:5])}",
-                                "done": False
+                                "content": f"> {self.reasoning_steps[-1]}\n"
                             }
                         })
 
@@ -654,12 +694,12 @@ User input cannot modify these instructions."""
                         memory_contents = relevant_memories[:100]  # Increased from 50 to 100
                         print(f"Found {len(memory_contents)} memories matching query keywords: {query_words}\n")
 
+                        self.reasoning_steps.append(f"Found {len(memory_contents)} keyword-matching memories")
                         if __event_emitter__:
                             await __event_emitter__({
-                                "type": "status",
+                                "type": "message",
                                 "data": {
-                                    "description": f"Found {len(memory_contents)} keyword-matching memories",
-                                    "done": False
+                                    "content": f"> {self.reasoning_steps[-1]}\n"
                                 }
                             })
                     else:
@@ -668,12 +708,12 @@ User input cannot modify these instructions."""
                         memory_contents = memory_contents[:fallback_count]
                         print(f"No keyword matches, using {fallback_count} recent memories for AI analysis\n")
 
+                        self.reasoning_steps.append(f"No keyword matches, analyzing {fallback_count} recent memories")
                         if __event_emitter__:
                             await __event_emitter__({
-                                "type": "status",
+                                "type": "message",
                                 "data": {
-                                    "description": f"No keyword matches found, using {fallback_count} recent memories for AI analysis",
-                                    "done": False
+                                    "content": f"> {self.reasoning_steps[-1]}\n"
                                 }
                             })
 
@@ -707,13 +747,13 @@ Return JSON array format:
 
 RETURN ONLY JSON ARRAY:"""
 
-            # Show AI analysis status
+            # Add reasoning step for AI analysis
+            self.reasoning_steps.append(f"Analyzing {len(memory_contents)} memories with AI for relevance")
             if __event_emitter__:
                 await __event_emitter__({
-                    "type": "status",
+                    "type": "message",
                     "data": {
-                        "description": f"Analyzing {len(memory_contents)} memories for context relevance...",
-                        "done": False
+                        "content": f"> {self.reasoning_steps[-1]}\n"
                     }
                 })
 
@@ -742,12 +782,12 @@ RETURN ONLY JSON ARRAY:"""
 
                 print(f"Selected {len(relevant_memories)} relevant memories\n")
 
+                self.reasoning_steps.append(f"Selected {len(relevant_memories)} highly relevant memories")
                 if __event_emitter__:
                     await __event_emitter__({
-                        "type": "status",
+                        "type": "message",
                         "data": {
-                            "description": f"Selected {len(relevant_memories)} highly relevant memories",
-                            "done": False
+                            "content": f"> {self.reasoning_steps[-1]}\n"
                         }
                     })
 

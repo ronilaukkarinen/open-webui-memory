@@ -1,3 +1,7 @@
+### 2.0.0: 2025-06-15
+
+* Show reasoning indicator "Accessing memories..." with live progress updates during processing
+
 ### 1.3.7: 2025-06-15
 
 * Update existing memories when adding details instead of creating duplicates

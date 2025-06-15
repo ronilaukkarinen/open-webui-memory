@@ -1,10 +1,14 @@
+### 2.0.4: 2025-06-16
+
+* Remove unnecessary limitations
+* Refine prompts
+
 ### 2.0.3: 2025-06-16
 
 * Fix memories not stored, change to less limiting memory identification
 * Fix "Memory updated" event emitter not shown
 * Disable memory limitation in amounts
 * Fix memory identification to use all memories for analysis
-* Remove unnecessary limits
 
 ### 2.0.2: 2025-06-15
 

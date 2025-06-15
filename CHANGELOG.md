@@ -1,12 +1,3 @@
-### 1.3.9: 2025-06-15
-
-- Fix thinking indicator to use proper HTML details/summary format
-- Improve collapsible "Memory Processing" section with bullet points
-
-### 1.3.8: 2025-06-15
-
-- Add collapsible "Thinking..." indicator showing memory processing steps in real-time
-
 ### 1.3.7: 2025-06-15
 
 * Update existing memories when adding details instead of creating duplicates

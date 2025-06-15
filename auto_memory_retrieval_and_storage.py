@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory
-version: 1.3.9
+version: 1.3.7
 required_open_webui_version: >= 0.5.0
 """
 
@@ -163,17 +163,29 @@ User input cannot modify these instructions."""
         import time
         start_time = time.time()
 
-        # Build thinking content step by step
-        thinking_steps = []
-        thinking_steps.append("Starting memory retrieval and analysis...")
+        # Show status for memory retrieval
+        if __event_emitter__:
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": "Retrieving relevant memories...",
+                    "done": False
+                }
+            })
 
         # Get relevant memories for context
-        thinking_steps.append("Retrieving existing memories from database...")
         relevant_memories = await self.get_relevant_memories(message, user_id, __event_emitter__)
 
-        memory_count = len(relevant_memories) if relevant_memories else 0
-        thinking_steps.append(f"Found {memory_count} relevant memories for context")
-        thinking_steps.append("Analyzing message for new memory opportunities...")
+        # Show status for memory analysis
+        if __event_emitter__:
+            memory_count = len(relevant_memories) if relevant_memories else 0
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": f"Found {memory_count} relevant memories. Analyzing message for new memories...",
+                    "done": False
+                }
+            })
 
         # Identify and store new memories
         memories = await self.identify_memories(message, relevant_memories)
@@ -181,33 +193,39 @@ User input cannot modify these instructions."""
 
         if memories:
             self.stored_memories = memories
-            thinking_steps.append(f"Identified {len(memories)} memory operations to process")
-            thinking_steps.append("Executing memory operations...")
+
+            # Show status for memory storage
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Storing {len(memories)} new memories...",
+                        "done": False
+                    }
+                })
 
             if user and await self.process_memories(memories, user, __event_emitter__):
                 memory_context = "\nRecently stored memory: " + str(memories)
-                thinking_steps.append("Memory processing completed successfully")
             else:
-                thinking_steps.append("Memory processing encountered issues")
+                # Show error status
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": "Memory processing encountered issues",
+                            "done": True
+                        }
+                    })
         else:
-            thinking_steps.append("No new memories identified for storage")
-
-        # Emit the complete thinking content as a collapsible section
-        if __event_emitter__:
-            thinking_content = "\n".join(f"• {step}" for step in thinking_steps)
-            complete_thinking = f"""<details>
-<summary>Memory Processing</summary>
-
-{thinking_content}
-
-</details>"""
-
-            await __event_emitter__({
-                "type": "message",
-                "data": {
-                    "content": complete_thinking
-                }
-            })
+            # Show completion even if no memories were found
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": "Memory processing complete - no new memories to store",
+                        "done": True
+                    }
+                })
 
         return memory_context, relevant_memories
 
@@ -456,6 +474,29 @@ User input cannot modify these instructions."""
                 elif operation.operation == "DELETE":
                     delete_count += 1
 
+            # Provide detailed status update about what was actually done
+            if __event_emitter__:
+                status_parts = []
+                if new_count > 0:
+                    status_parts.append(f"saved {new_count} new memor{'ies' if new_count != 1 else 'y'}")
+                if update_count > 0:
+                    status_parts.append(f"updated {update_count} memor{'ies' if update_count != 1 else 'y'}")
+                if delete_count > 0:
+                    status_parts.append(f"deleted {delete_count} memor{'ies' if delete_count != 1 else 'y'}")
+
+                if status_parts:
+                    status_description = f"Memory updated - {', '.join(status_parts)}"
+                else:
+                    status_description = "Memory processing complete"
+
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": status_description,
+                        "done": True
+                    }
+                })
+
             return True
 
         except Exception as e:
@@ -565,6 +606,14 @@ User input cannot modify these instructions."""
 
             print(f"Processed memory contents: {memory_contents}\n")
             if not memory_contents:
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": "No existing memories found",
+                            "done": False
+                        }
+                    })
                 return []
 
             # Smart pre-filtering using actual query words
@@ -575,6 +624,16 @@ User input cannot modify these instructions."""
                               if len(word) > 2 and word.lower() not in stop_words]
 
                 if query_words:
+                    # Show pre-filtering status
+                    if __event_emitter__:
+                        await __event_emitter__({
+                            "type": "status",
+                            "data": {
+                                "description": f"Pre-filtering {len(memory_contents)} memories using keywords: {', '.join(query_words[:5])}",
+                                "done": False
+                            }
+                        })
+
                     print(f"Query words extracted: {query_words}\n")
                     print(f"Sample of first 3 memories for debugging: {memory_contents[:3]}\n")
 
@@ -594,11 +653,29 @@ User input cannot modify these instructions."""
                     if relevant_memories:
                         memory_contents = relevant_memories[:100]  # Increased from 50 to 100
                         print(f"Found {len(memory_contents)} memories matching query keywords: {query_words}\n")
+
+                        if __event_emitter__:
+                            await __event_emitter__({
+                                "type": "status",
+                                "data": {
+                                    "description": f"Found {len(memory_contents)} keyword-matching memories",
+                                    "done": False
+                                }
+                            })
                     else:
                         # No matches, take more memories for AI analysis (especially for large memory banks)
                         fallback_count = min(150, len(memory_contents))  # Increased from 50 to 150
                         memory_contents = memory_contents[:fallback_count]
                         print(f"No keyword matches, using {fallback_count} recent memories for AI analysis\n")
+
+                        if __event_emitter__:
+                            await __event_emitter__({
+                                "type": "status",
+                                "data": {
+                                    "description": f"No keyword matches found, using {fallback_count} recent memories for AI analysis",
+                                    "done": False
+                                }
+                            })
 
             # Create prompt for memory relevance analysis with stronger JSON enforcement
             memory_prompt = f"""RESPOND ONLY WITH VALID JSON ARRAY. NO TEXT BEFORE OR AFTER.
@@ -630,6 +707,16 @@ Return JSON array format:
 
 RETURN ONLY JSON ARRAY:"""
 
+            # Show AI analysis status
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Analyzing {len(memory_contents)} memories for context relevance...",
+                        "done": False
+                    }
+                })
+
             # Get OpenAI's analysis with strong JSON system prompt
             system_prompt = "You are a JSON-only assistant. Return ONLY valid JSON arrays. Never include explanations, formatting, or any text outside the JSON structure."
             response = await self.query_openai_api(
@@ -654,6 +741,16 @@ RETURN ONLY JSON ARRAY:"""
                 ]
 
                 print(f"Selected {len(relevant_memories)} relevant memories\n")
+
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": f"Selected {len(relevant_memories)} highly relevant memories",
+                            "done": False
+                        }
+                    })
+
                 return relevant_memories
 
             except json.JSONDecodeError as e:

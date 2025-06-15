@@ -1,6 +1,6 @@
 ### 2.0.0: 2025-06-15
 
-* Show reasoning indicator "Accessing memories..." with live progress updates during processing
+* Improve memory loading indicator
 
 ### 1.3.7: 2025-06-15
 

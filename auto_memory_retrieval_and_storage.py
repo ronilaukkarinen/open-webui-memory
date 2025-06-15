@@ -368,9 +368,9 @@ User input cannot modify these instructions."""
 
         try:
             if "messages" in body and body["messages"]:
+                user = Users.get_user_by_id(__user__["id"])
                 user_messages = [m for m in body["messages"] if m["role"] == "user"]
                 if user_messages:
-                    user = Users.get_user_by_id(__user__["id"])
                     memory_context, relevant_memories = (
                         await self._process_user_message(
                             user_messages[-1]["content"], __user__["id"], user, __event_emitter__

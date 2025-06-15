@@ -266,7 +266,7 @@ User input cannot modify these instructions."""
                 })
 
         # Step 1: Analyze message intent
-        self.reasoning_steps.append("Thinking and analyzing your message...")
+        self.reasoning_steps.append("Analyzing your message...")
         await send_reasoning_update()
         await asyncio.sleep(0.5)  # Small delay to make status visible
 
@@ -274,7 +274,7 @@ User input cannot modify these instructions."""
         print(f"Message analysis: needs_memory_search={needs_memory_search}, is_foreign_language={is_foreign_language}\n")
 
         # Step 2: Always search for relevant memories (for context)
-        self.reasoning_steps.append("Thinking while looking for memories...")
+        self.reasoning_steps.append("Looking for memories...")
         await send_reasoning_update()
         await asyncio.sleep(0.3)
 
@@ -322,7 +322,11 @@ User input cannot modify these instructions."""
         self, body: dict, memory_context: str, relevant_memories: List[str]
     ) -> None:
         """Update the message context with memory information"""
+        print(f"_update_message_context called with {len(relevant_memories) if relevant_memories else 0} memories\n")
+        print(f"Relevant memories received: {relevant_memories}\n")
+
         if not memory_context and not relevant_memories:
+            print("No memory context or relevant memories, returning early\n")
             return
 
         context = ""
@@ -336,17 +340,27 @@ User input cannot modify these instructions."""
             # Extract just the memory content for readability
             cleaned = []
             for mem in relevant_memories:
+                print(f"Processing memory: {mem}\n")
                 if "Content:" in mem:
-                    cleaned.append(mem.split("Content:", 1)[1].rstrip("]").strip())
+                    extracted = mem.split("Content:", 1)[1].rstrip("]").strip()
+                    print(f"Extracted content: {extracted}\n")
+                    cleaned.append(extracted)
                 else:
+                    print(f"No 'Content:' found, using full memory: {mem}\n")
                     cleaned.append(mem)
             context += "\n".join(f"- {mem}" for mem in cleaned)
 
+        print(f"Final context being added: {context}\n")
+
         if context and "messages" in body:
             if body["messages"] and body["messages"][0]["role"] == "system":
+                print("Adding to existing system message\n")
                 body["messages"][0]["content"] += "\n" + context
             else:
+                print("Creating new system message\n")
                 body["messages"].insert(0, {"role": "system", "content": context})
+        else:
+            print("No context to add or no messages in body\n")
 
     async def inlet(
         self,
@@ -791,14 +805,35 @@ Examples:
                 self.reasoning_steps.append("No existing memories found in database")
                 return []
 
-            # Smart pre-filtering using actual query words
+            # Smart pre-filtering for large memory collections
             # Extract words from the query for filtering
             query_words = [word.lower().strip('?.,!') for word in current_message.split() if len(word) > 2]
             print(f"Query words for filtering: {query_words}\n")
 
-            # Send ALL memories to AI for semantic analysis - no artificial limits
-            relevant_memories = memory_contents
-            print(f"Sending all {len(memory_contents)} memories to AI for semantic analysis\n")
+            # If we have too many memories, do keyword pre-filtering first
+            if len(memory_contents) > 200:  # Threshold for pre-filtering
+                print(f"Large memory collection ({len(memory_contents)}), applying keyword pre-filtering\n")
+
+                # Pre-filter memories that contain any query words
+                pre_filtered = []
+                for mem in memory_contents:
+                    mem_lower = mem.lower()
+                    # Check if any query word appears in the memory
+                    if any(word in mem_lower for word in query_words):
+                        pre_filtered.append(mem)
+
+                print(f"Pre-filtered to {len(pre_filtered)} memories containing query keywords\n")
+
+                # If still too many, take the most recent ones (assuming newer memories are more relevant)
+                if len(pre_filtered) > 100:
+                    pre_filtered = pre_filtered[-100:]  # Take last 100 (most recent)
+                    print(f"Further reduced to {len(pre_filtered)} most recent memories\n")
+
+                relevant_memories = pre_filtered if pre_filtered else memory_contents[:100]
+            else:
+                relevant_memories = memory_contents
+
+            print(f"Sending {len(relevant_memories)} memories to AI for semantic analysis\n")
 
             # Create prompt for memory relevance analysis with better semantic understanding
             memory_prompt = f"""RESPOND ONLY WITH VALID JSON ARRAY. NO TEXT BEFORE OR AFTER. NO MARKDOWN FORMATTING.
@@ -822,15 +857,30 @@ Use broad semantic understanding to find connections:
 Rate each memory's relevance from 1-10 based on how useful it would be for answering the query.
 Be generous with relevance scores - if there's any semantic or contextual connection, give it at least a 4.
 
+IMPORTANT: In the "memory" field, return the COMPLETE memory string exactly as provided (including [Id: X, Content: Y] format).
+
 Return ONLY the JSON array with NO markdown formatting:
-[{{"memory": "exact content", "relevance": number, "id": "memory_id"}}]"""
+[{{"memory": "complete memory string exactly as provided", "relevance": number, "id": "memory_id"}}]"""
 
             # Get OpenAI's analysis
             system_prompt = "You are a JSON-only assistant. Return ONLY valid JSON arrays. Never include explanations, formatting, or any text outside the JSON structure."
-            response = await self.query_openai_api(
-                self.valves.model, system_prompt, memory_prompt
-            )
-            print(f"Memory relevance analysis: {response}\n")
+            try:
+                response = await self.query_openai_api(
+                    self.valves.model, system_prompt, memory_prompt
+                )
+                print(f"Memory relevance analysis: {response}\n")
+            except Exception as api_error:
+                print(f"OpenAI API call failed: {api_error}\n")
+                # Fallback to keyword filtering if API fails
+                print("API failed, using keyword-based fallback\n")
+                fallback_memories = []
+                for mem in relevant_memories[:50]:  # Limit to top 50 for fallback
+                    mem_lower = mem.lower()
+                    if any(word in mem_lower for word in query_words):
+                        fallback_memories.append(mem)
+
+                print(f"API fallback returned {len(fallback_memories)} memories\n")
+                return fallback_memories
 
             try:
                 # Clean response and parse JSON
@@ -849,12 +899,23 @@ Return ONLY the JSON array with NO markdown formatting:
                 ]
 
                 print(f"Selected {len(relevant_memories)} relevant memories (threshold: {threshold})\n")
+                print(f"Relevant memories being returned: {relevant_memories}\n")
                 return relevant_memories
 
             except json.JSONDecodeError as e:
                 print(f"Failed to parse OpenAI response: {e}\n")
                 print(f"Raw response: {response}\n")
-                return []
+
+                # Fallback: if AI analysis fails, return keyword-filtered memories
+                print("Falling back to keyword-based filtering\n")
+                fallback_memories = []
+                for mem in relevant_memories[:20]:  # Limit to top 20 for fallback
+                    mem_lower = mem.lower()
+                    if any(word in mem_lower for word in query_words):
+                        fallback_memories.append(mem)
+
+                print(f"Fallback returned {len(fallback_memories)} memories\n")
+                return fallback_memories
 
         except Exception as e:
             print(f"Error getting relevant memories: {e}\n")

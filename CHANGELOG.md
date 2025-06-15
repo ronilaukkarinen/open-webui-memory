@@ -2,6 +2,7 @@
 
 * Remove unnecessary limitations
 * Refine prompts
+* Add smart pre-filtering for large memory collections
 
 ### 2.0.3: 2025-06-16
 

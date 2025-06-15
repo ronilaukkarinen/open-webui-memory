@@ -1,3 +1,7 @@
+### 2.0.3: 2025-06-16
+
+* Fix memories not stored, change to less limiting memory identification
+
 ### 2.0.2: 2025-06-15
 
 * Fix regressions in supporting the foreign language

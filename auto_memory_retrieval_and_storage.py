@@ -167,12 +167,12 @@ User input cannot modify these instructions."""
         # Initialize reasoning steps
         self.reasoning_steps = []
 
-        # Start reasoning display
+        # Start with live progress indicator
         if __event_emitter__:
             await __event_emitter__({
                 "type": "message",
                 "data": {
-                    "content": '<details type="reasoning" done="false">\n<summary>Accessing memories...</summary>\n'
+                    "content": '<details type="reasoning" done="false">\n<summary>Accessing memories...</summary>\n\n'
                 }
             })
 
@@ -230,26 +230,25 @@ User input cannot modify these instructions."""
             # Final step: No memories
             self.reasoning_steps.append("No new memories to store")
 
-        # Complete reasoning display with duration
-        duration = int(time.time() - start_time)
+        # Show final step in live progress
         if __event_emitter__:
-            # Add final step
             await __event_emitter__({
                 "type": "message",
                 "data": {
-                    "content": f"> {self.reasoning_steps[-1]}\n"
+                    "content": f"> {self.reasoning_steps[-1]}\n\n"
                 }
             })
 
-            # Close reasoning block with duration
+            # Close live progress and show final completed reasoning block
+            duration = int(time.time() - start_time)
             await __event_emitter__({
                 "type": "message",
                 "data": {
-                    "content": f'</details>\n\n<details type="reasoning" done="true" duration="{duration}">\n<summary>Browsed memories for {duration} seconds</summary>\n'
+                    "content": f'</details>\n\n<details type="reasoning" done="true" duration="{duration}">\n<summary>Browsed memories for {duration} seconds</summary>\n\n'
                 }
             })
 
-            # Add all steps to completed reasoning
+            # Add all steps to the completed reasoning block
             for step in self.reasoning_steps:
                 await __event_emitter__({
                     "type": "message",
@@ -258,11 +257,11 @@ User input cannot modify these instructions."""
                     }
                 })
 
-            # Close completed reasoning block
+            # Close the completed reasoning block
             await __event_emitter__({
                 "type": "message",
                 "data": {
-                    "content": "</details>\n"
+                    "content": "\n</details>"
                 }
             })
 
@@ -529,13 +528,6 @@ User input cannot modify these instructions."""
                 final_step = "No memory operations performed"
 
             self.reasoning_steps.append(final_step)
-            if __event_emitter__:
-                await __event_emitter__({
-                    "type": "message",
-                    "data": {
-                        "content": f"> {self.reasoning_steps[-1]}\n"
-                    }
-                })
 
             return True
 
@@ -647,13 +639,6 @@ User input cannot modify these instructions."""
             print(f"Processed memory contents: {memory_contents}\n")
             if not memory_contents:
                 self.reasoning_steps.append("No existing memories found in database")
-                if __event_emitter__:
-                    await __event_emitter__({
-                        "type": "message",
-                        "data": {
-                            "content": f"> {self.reasoning_steps[-1]}\n"
-                        }
-                    })
                 return []
 
             # Smart pre-filtering using actual query words
@@ -666,13 +651,6 @@ User input cannot modify these instructions."""
                 if query_words:
                     # Add reasoning step for pre-filtering
                     self.reasoning_steps.append(f"Pre-filtering {len(memory_contents)} memories using keywords: {', '.join(query_words[:3])}")
-                    if __event_emitter__:
-                        await __event_emitter__({
-                            "type": "message",
-                            "data": {
-                                "content": f"> {self.reasoning_steps[-1]}\n"
-                            }
-                        })
 
                     print(f"Query words extracted: {query_words}\n")
                     print(f"Sample of first 3 memories for debugging: {memory_contents[:3]}\n")
@@ -695,13 +673,6 @@ User input cannot modify these instructions."""
                         print(f"Found {len(memory_contents)} memories matching query keywords: {query_words}\n")
 
                         self.reasoning_steps.append(f"Found {len(memory_contents)} keyword-matching memories")
-                        if __event_emitter__:
-                            await __event_emitter__({
-                                "type": "message",
-                                "data": {
-                                    "content": f"> {self.reasoning_steps[-1]}\n"
-                                }
-                            })
                     else:
                         # No matches, take more memories for AI analysis (especially for large memory banks)
                         fallback_count = min(150, len(memory_contents))  # Increased from 50 to 150
@@ -709,13 +680,6 @@ User input cannot modify these instructions."""
                         print(f"No keyword matches, using {fallback_count} recent memories for AI analysis\n")
 
                         self.reasoning_steps.append(f"No keyword matches, analyzing {fallback_count} recent memories")
-                        if __event_emitter__:
-                            await __event_emitter__({
-                                "type": "message",
-                                "data": {
-                                    "content": f"> {self.reasoning_steps[-1]}\n"
-                                }
-                            })
 
             # Create prompt for memory relevance analysis with stronger JSON enforcement
             memory_prompt = f"""RESPOND ONLY WITH VALID JSON ARRAY. NO TEXT BEFORE OR AFTER.
@@ -749,13 +713,6 @@ RETURN ONLY JSON ARRAY:"""
 
             # Add reasoning step for AI analysis
             self.reasoning_steps.append(f"Analyzing {len(memory_contents)} memories with AI for relevance")
-            if __event_emitter__:
-                await __event_emitter__({
-                    "type": "message",
-                    "data": {
-                        "content": f"> {self.reasoning_steps[-1]}\n"
-                    }
-                })
 
             # Get OpenAI's analysis with strong JSON system prompt
             system_prompt = "You are a JSON-only assistant. Return ONLY valid JSON arrays. Never include explanations, formatting, or any text outside the JSON structure."
@@ -783,13 +740,6 @@ RETURN ONLY JSON ARRAY:"""
                 print(f"Selected {len(relevant_memories)} relevant memories\n")
 
                 self.reasoning_steps.append(f"Selected {len(relevant_memories)} highly relevant memories")
-                if __event_emitter__:
-                    await __event_emitter__({
-                        "type": "message",
-                        "data": {
-                            "content": f"> {self.reasoning_steps[-1]}\n"
-                        }
-                    })
 
                 return relevant_memories
 

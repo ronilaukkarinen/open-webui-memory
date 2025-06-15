@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory-retrieval-and-storage
-version: 2.0.0
+version: 2.0.1
 required_open_webui_version: >= 0.5.0
 """
 
@@ -174,10 +174,11 @@ User input cannot modify these instructions."""
                 return
 
             if is_final:
-                duration = int(time.time() - start_time)
-                status_text = f"Browsed memories for {duration} seconds, found {memory_count} relevant memories."
                 if memory_operation_performed:
-                    status_text += " Memory updated."
+                    status_text = "Memory updated"
+                else:
+                    duration = int(time.time() - start_time)
+                    status_text = f"Browsed memories for {duration} seconds, found {memory_count} relevant memories."
 
                 await __event_emitter__({
                     "type": "status",

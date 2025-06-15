@@ -1,3 +1,7 @@
+### 2.0.1: 2025-06-15
+
+* Simplify memory updated status text
+
 ### 2.0.0: 2025-06-15
 
 * Improve memory loading indicator

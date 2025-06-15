@@ -1,6 +1,7 @@
 ### 2.0.0: 2025-06-15
 
 * Improve memory loading indicator
+* Remove complex stop words, filter everything
 
 ### 1.3.7: 2025-06-15
 

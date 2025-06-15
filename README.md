@@ -24,12 +24,12 @@ This filter intelligently processes chat messages to extract meaningful informat
 
 ## Examples
 
-**User input**: "I live in Central street 45 and I love sushi"
-**Stored memories**:
-- Location: "User lives in Central street 45"
-- Preference: "User loves sushi"
+**User input**: "I live in Central street 45 and I love sushi"<br>
+**Stored memories**:<br>
+- Location: "User lives in Central street 45"<br>
+- Preference: "User loves sushi"<br>
 
-**User input**: "Remember that my doctor's appointment is next Tuesday at 3pm" 
-**Stored memory**: "Doctor's appointment scheduled for next Tuesday at 2025-01-14 15:00:00"
+**User input**: "Remember that my doctor's appointment is next Tuesday at 3pm" <br>
+**Stored memory**: "Doctor's appointment scheduled for next Tuesday at 2025-01-14 15:00:00"<br>
 
 **Context retrieval**: When user asks "What's my address?", the filter automatically retrieves and provides the stored location information.

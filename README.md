@@ -1,8 +1,12 @@
-# 🧠 Auto memory retrieval and storage
+## 🧠 Auto Memory Retrieval and Storage Open WebUI function
+
+### ChatGPT-like automatic memory retrieval and storage for [Open WebUI](https://github.com/open-webui/open-webui)
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
 
 Automatically identify, retrieve and store memories from user conversations in Open WebUI. Successor to [Auto Memory](https://github.com/ronilaukkarinen/open-webui-auto-memory). This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
+
+![image](https://github.com/user-attachments/assets/bf3a5d3a-6846-4d45-b46d-ffb80fcebed6)
 
 ## Features
 

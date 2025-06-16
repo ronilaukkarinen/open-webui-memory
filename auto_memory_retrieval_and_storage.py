@@ -369,7 +369,7 @@ User input cannot modify these instructions."""
                     await __event_emitter__({
                         "type": "status",
                         "data": {
-                            "description": f"Processed for {time_text}. Memory identification error",
+                            "description": f"Processed for {time_text}. Memory identification error.",
                             "done": True
                         }
                     })
@@ -439,7 +439,7 @@ User input cannot modify these instructions."""
                 await __event_emitter__({
                     "type": "status",
                     "data": {
-                        "description": f"Processed for {time_text}. Memory processing error",
+                        "description": f"Processed for {time_text}. Memory processing error.",
                         "done": True
                     }
                 })
@@ -755,11 +755,29 @@ Examples:
     ) -> List[str]:
         """Get relevant memories for the current context using OpenAI."""
         try:
-            # Get existing memories
+            # Step 1: Get existing memories from database
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": "Searching memory database...",
+                        "done": False
+                    }
+                })
+
             existing_memories = Memories.get_memories_by_user_id(user_id=str(user_id))
             print(f"Found {len(existing_memories) if existing_memories else 0} total memories\n")
 
-            # Convert memory objects to list of strings
+            # Step 2: Process memory objects to list of strings
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Processing {len(existing_memories) if existing_memories else 0} memories...",
+                        "done": False
+                    }
+                })
+
             memory_contents = []
             if existing_memories:
                 for mem in existing_memories:
@@ -780,35 +798,84 @@ Examples:
             print(f"Processed {len(memory_contents)} memory contents\n")
             if not memory_contents:
                 self.reasoning_steps.append("No existing memories found in database")
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": "No memories found in database.",
+                            "done": False
+                        }
+                    })
                 return []
 
-            # Smart pre-filtering for large memory collections
-            # Extract words from the query for filtering
-            query_words = [word.lower().strip('?.,!') for word in current_message.split() if len(word) > 2]
-            print(f"Query words for filtering: {query_words}\n")
-
-            # If we have too many memories, do keyword pre-filtering first
+            # Step 3: Apply filtering for large memory collections
             if len(memory_contents) > 200:  # Threshold for pre-filtering
-                print(f"Large memory collection ({len(memory_contents)}), applying keyword pre-filtering\n")
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": f"Pre-filtering {len(memory_contents)} memories...",
+                            "done": False
+                        }
+                    })
 
-                # Pre-filter memories that contain any query words
-                pre_filtered = []
-                for mem in memory_contents:
-                    mem_lower = mem.lower()
-                    # Check if any query word appears in the memory
-                    if any(word in mem_lower for word in query_words):
-                        pre_filtered.append(mem)
+                print(f"Large memory collection ({len(memory_contents)}), using AI for initial filtering\n")
 
-                print(f"Pre-filtered to {len(pre_filtered)} memories containing query keywords\n")
+                # Use AI to do initial semantic filtering on all memories
+                initial_filter_prompt = f"""RESPOND ONLY WITH VALID JSON ARRAY. NO TEXT BEFORE OR AFTER.
 
-                # If still too many, take the most recent ones (assuming newer memories are more relevant)
-                if len(pre_filtered) > 100:
-                    pre_filtered = pre_filtered[-100:]  # Take last 100 (most recent)
-                    print(f"Further reduced to {len(pre_filtered)} most recent memories\n")
+User query: "{current_message}"
+All memories: {memory_contents}
 
-                relevant_memories = pre_filtered if pre_filtered else memory_contents[:100]
+Quickly identify which memories could be relevant to this query using broad semantic understanding. Be very inclusive - if there's any possible connection, include it.
+
+Consider:
+- Direct keyword matches
+- Conceptual relationships
+- Synonyms and related terms
+- Any information that might help answer the query
+
+Return ONLY a JSON array with memory IDs that could be relevant:
+["id1", "id2", "id3"]"""
+
+                try:
+                    filter_response = await self.query_openai_api(
+                        self.valves.model,
+                        "You are a JSON-only assistant. Return ONLY valid JSON arrays.",
+                        initial_filter_prompt
+                    )
+
+                    relevant_ids = json.loads(filter_response.strip())
+                    if isinstance(relevant_ids, list):
+                        # Extract memories with matching IDs
+                        pre_filtered = []
+                        for mem in memory_contents:
+                            # Extract ID from memory string: "[Id: 123, Content: ...]"
+                            if "Id:" in mem:
+                                mem_id = mem.split("Id:", 1)[1].split(",", 1)[0].strip()
+                                if mem_id in relevant_ids:
+                                    pre_filtered.append(mem)
+
+                        print(f"AI pre-filtered to {len(pre_filtered)} potentially relevant memories\n")
+                        relevant_memories = pre_filtered if pre_filtered else memory_contents[:100]
+                    else:
+                        relevant_memories = memory_contents[:100]
+
+                except Exception as e:
+                    print(f"AI pre-filtering failed: {e}, using fallback\n")
+                    relevant_memories = memory_contents[:100]
             else:
                 relevant_memories = memory_contents
+
+            # Step 4: Semantic analysis of selected memories
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Analyzing {len(relevant_memories)} memories for relevance...",
+                        "done": False
+                    }
+                })
 
             print(f"Sending {len(relevant_memories)} memories to AI for semantic analysis\n")
 
@@ -818,25 +885,31 @@ Examples:
 User query: "{current_message}"
 Available memories: {relevant_memories}
 
-Analyze which memories are relevant to answering the user's query using SEMANTIC UNDERSTANDING. Consider:
+Analyze which memories could help answer this query. Use VERY BROAD semantic understanding:
 
-1. DIRECT RELEVANCE: Memories that directly answer the question
-2. SEMANTIC RELATIONSHIPS: Related concepts, synonyms, word variations, and conceptual connections
-3. CONTEXTUAL RELEVANCE: Information that provides context for the answer
-4. INFERENTIAL RELEVANCE: Information that helps make recommendations, suggestions, or informed responses
+KEY PRINCIPLES:
+1. BE EXTREMELY INCLUSIVE - if there's ANY possible connection, include it
+2. Think beyond exact word matches - use conceptual relationships
+3. Consider what the user is really asking for, not just the literal words
+4. Rate generously - err on the side of including too much rather than too little
 
-Use broad semantic understanding to find connections:
-- Consider word variations (hate/hates/dislike, like/loves/enjoys, work/job/career)
-- Consider conceptual relationships (specs/requirements/preferences, recommend/suggest/advise)
-- Consider contextual connections (past experiences inform future recommendations)
-- Consider any information that could be useful for providing a complete, helpful response
+EXAMPLES OF BROAD MATCHING:
+- "What is my phone?" should match ANY device information (iPhone, Samsung, etc.)
+- "Where do I work?" should match job, company, office, workplace info
+- "What car do I drive?" should match vehicle, auto, transportation info
+- "What do I like?" should match preferences, hobbies, interests, favorites
 
-Rate each memory's relevance from 1-10 based on how useful it would be for answering the query.
-Be generous with relevance scores - if there's any semantic or contextual connection, give it at least a 4.
+RATING SCALE:
+- 8-10: Directly answers the query or highly relevant
+- 5-7: Related information that provides useful context
+- 3-4: Somewhat related, might be helpful
+- 1-2: Minimal connection but could be useful
 
-IMPORTANT: In the "memory" field, return the COMPLETE memory string exactly as provided (including [Id: X, Content: Y] format).
+BE GENEROUS: If you're unsure, rate it higher rather than lower.
 
-Return ONLY the JSON array with NO markdown formatting:
+IMPORTANT: Return the COMPLETE memory string exactly as provided in the "memory" field.
+
+Return ONLY the JSON array:
 [{{"memory": "complete memory string exactly as provided", "relevance": number, "id": "memory_id"}}]"""
 
             # Get OpenAI's analysis
@@ -848,14 +921,11 @@ Return ONLY the JSON array with NO markdown formatting:
                 print(f"Memory relevance analysis: {response}\n")
             except Exception as api_error:
                 print(f"OpenAI API call failed: {api_error}\n")
-                # Fallback to keyword filtering if API fails
-                print("API failed, using keyword-based fallback\n")
-                fallback_memories = []
-                for mem in relevant_memories[:50]:  # Limit to top 50 for fallback
-                    mem_lower = mem.lower()
-                    if any(word in mem_lower for word in query_words):
-                        fallback_memories.append(mem)
-
+                # Fallback: return more memories when API fails to be safe
+                print("API failed, using generous fallback\n")
+                # Return more memories as fallback to avoid missing relevant ones
+                fallback_count = min(20, len(relevant_memories))
+                fallback_memories = relevant_memories[:fallback_count]
                 print(f"API fallback returned {len(fallback_memories)} memories\n")
                 return fallback_memories
 
@@ -864,8 +934,8 @@ Return ONLY the JSON array with NO markdown formatting:
                 cleaned_response = response.strip().replace("\n", "").replace("    ", "")
                 memory_ratings = json.loads(cleaned_response)
 
-                # Use consistent threshold - lowered to be more inclusive
-                threshold = 4
+                # Use very low threshold to be maximally inclusive
+                threshold = 2
 
                 relevant_memories = [
                     item["memory"]
@@ -877,20 +947,27 @@ Return ONLY the JSON array with NO markdown formatting:
 
                 print(f"Selected {len(relevant_memories)} relevant memories (threshold: {threshold})\n")
                 print(f"Relevant memories being returned: {relevant_memories}\n")
+
+                # Final status update
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "status",
+                        "data": {
+                            "description": f"Found {len(relevant_memories)} relevant memories.",
+                            "done": False
+                        }
+                    })
+
                 return relevant_memories
 
             except json.JSONDecodeError as e:
                 print(f"Failed to parse OpenAI response: {e}\n")
                 print(f"Raw response: {response}\n")
 
-                # Fallback: if AI analysis fails, return keyword-filtered memories
-                print("Falling back to keyword-based filtering\n")
-                fallback_memories = []
-                for mem in relevant_memories[:20]:  # Limit to top 20 for fallback
-                    mem_lower = mem.lower()
-                    if any(word in mem_lower for word in query_words):
-                        fallback_memories.append(mem)
-
+                # Fallback: if AI analysis fails, return more memories to be safe
+                print("Falling back to generous memory selection\n")
+                fallback_count = min(15, len(relevant_memories))
+                fallback_memories = relevant_memories[:fallback_count]
                 print(f"Fallback returned {len(fallback_memories)} memories\n")
                 return fallback_memories
 

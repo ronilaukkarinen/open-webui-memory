@@ -1,3 +1,8 @@
+### 2.1.0: 2025-06-17
+
+* Performance: Remove foreign language support
+* Add valve to exclude models from memory processing
+
 ### 2.0.4: 2025-06-16
 
 * Remove unnecessary limitations

@@ -2,7 +2,7 @@
 
 * Fix model exclusion
 * Add proper instructions for model exclusion
-* Add LLM exclusion features
+* Add LLM exclusion feature
 
 ### 2.1.0: 2025-06-17
 

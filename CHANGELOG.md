@@ -2,6 +2,7 @@
 
 * Performance: Remove foreign language support
 * Add valve to exclude models from memory processing
+* Improve prompt: Be more generous with what to store as a long term memory
 
 ### 2.0.4: 2025-06-16
 

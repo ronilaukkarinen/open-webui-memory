@@ -1,8 +1,11 @@
 """
-title: Remember
+title: Memory
 author: Roni Laukkarinen (originally mhio and cooksleep)
 version: 2.2.0
 license: MIT
+priority: 1
+toolbar: true
+icon: brain
 
 Memory retrieval tool designed to work with auto_memory_retrieval_and_storage.py.
 

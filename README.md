@@ -20,7 +20,7 @@ Automatically identify, retrieve and store memories from user conversations in O
 ## Installation
 
 1. Go to **Settings → Functions** and add the contents of `auto_memory_retrieval_and_storage.py` file, save
-2. If you want to use OpenAI API, you need to add your API key to the **OpenAI API key** field
+2. If you want to use OpenAI API, you need to add your API key to the **OpenAI API key** field. For pollinations, use `https://text.pollinations.ai/openai`.
 3. If you want to use a local model, use Ollama API:
     - Set **OpenAI API URL** to `http://localhost:11434/v1`
     - Set **OpenAI API key** to `ollama`

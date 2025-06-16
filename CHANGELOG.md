@@ -4,6 +4,7 @@
 * Add valve to exclude models from memory processing
 * Improve prompt: Be more generous with what to store as a long term memory
 * Add error notifications
+* Add more status updates
 
 ### 2.0.4: 2025-06-16
 

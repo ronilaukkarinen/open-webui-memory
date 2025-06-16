@@ -25,6 +25,7 @@ Automatically identify, retrieve and store memories from user conversations in O
     - Set **OpenAI API URL** to `http://localhost:11434/v1`
     - Set **OpenAI API key** to `ollama`
     - Set **Model** to the model you want to use (you can see the list with command `ollama list`)
+4. Go to **Settings → Tools** and add the contents of `remember.py` file, save it as "Remember"
 
 ## Examples
 

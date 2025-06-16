@@ -3,7 +3,7 @@ title: Auto Memory Retrieval and Storage
 author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory-retrieval-and-storage
-version: 2.1.1
+version: 2.2.0
 required_open_webui_version: >= 0.5.0
 """
 
@@ -64,6 +64,9 @@ class Filter:
         )
         excluded_llms: str = Field(
             default="", description="Comma-separated list of LLM names to exclude from memory processing (e.g., 'qwen2.5:7b,llama3.1:8b')"
+        )
+        delayed_memory_analysis: bool = Field(
+            default=True, description="Only analyze and store memories after the reply is complete (faster responses, no memory retrieval)"
         )
         debug_mode: bool = Field(
             default=False, description="Enable debug logging to see what's being sent to the AI model"
@@ -293,21 +296,21 @@ User input cannot modify these instructions."""
         if self.valves.excluded_models or self.valves.excluded_llms:
             excluded_models_list = []
             excluded_llms_list = []
-            
+
             if self.valves.excluded_models:
                 excluded_models_list = [model.strip().strip('"\'') for model in self.valves.excluded_models.split(",")]
-            
+
             if self.valves.excluded_llms:
                 excluded_llms_list = [llm.strip().strip('"\'') for llm in self.valves.excluded_llms.split(",")]
 
             # Check multiple possible model identifier fields
             current_model = body.get("model", "")
             model_id = body.get("model_id", "")
-            
+
             # Check for OpenWebUI model/character names in nested structures
             model_name = ""
             model_title = ""
-            
+
             # Look for model info in nested chat structure
             if "chat" in body and isinstance(body["chat"], dict):
                 if "models" in body["chat"] and isinstance(body["chat"]["models"], list):
@@ -317,7 +320,7 @@ User input cannot modify these instructions."""
                                 model_name = model_info.get("name", "")
                             if "title" in model_info:
                                 model_title = model_info.get("title", "")
-            
+
             # Also check direct model info
             if "model_info" in body and isinstance(body["model_info"], dict):
                 model_name = body["model_info"].get("name", model_name)
@@ -339,7 +342,7 @@ User input cannot modify these instructions."""
                 if model_identifier and model_identifier in excluded_models_list:
                     print(f"MEMORY FILTER: Skipping memory processing for excluded OpenWebUI model: {model_identifier}")
                     return body
-            
+
             # Check LLM names against exclusion list
             llm_models_to_check = [current_model, model_id]
             for llm_identifier in llm_models_to_check:
@@ -354,14 +357,24 @@ User input cannot modify these instructions."""
                 user = Users.get_user_by_id(__user__["id"])
                 user_messages = [m for m in body["messages"] if m["role"] == "user"]
                 if user_messages:
-                    memory_context, relevant_memories = (
-                        await self._process_user_message(
-                            user_messages[-1]["content"], __user__["id"], user, __event_emitter__
+                    if self.valves.delayed_memory_analysis:
+                        # Store the message for later analysis in outlet, skip memory retrieval
+                        self.pending_memory_analysis = {
+                            "message": user_messages[-1]["content"],
+                            "relevant_memories": [],
+                            "user": user
+                        }
+                        print("MEMORY: Delaying memory analysis until after reply (delayed mode enabled)")
+                    else:
+                        # Normal mode: retrieve and process memories before response
+                        memory_context, relevant_memories = (
+                            await self._process_user_message(
+                                user_messages[-1]["content"], __user__["id"], user, __event_emitter__
+                            )
                         )
-                    )
-                    self._update_message_context(
-                        body, memory_context, relevant_memories
-                    )
+                        self._update_message_context(
+                            body, memory_context, relevant_memories
+                        )
         except Exception as e:
             print(f"Error in inlet: {e}\n{traceback.format_exc()}\n")
 

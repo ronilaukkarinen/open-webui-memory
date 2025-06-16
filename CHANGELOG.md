@@ -1,3 +1,8 @@
+### 2.2.0: 2025-06-17
+
+* Add valve: Only store and analyze memories after the reply is complete (faster responses, no memory retrieval by default)
+* Add Remember tool
+
 ### 2.1.1: 2025-06-17
 
 * Fix model exclusion

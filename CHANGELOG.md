@@ -1,3 +1,13 @@
+### 3.0.0rc: 2025-06-17
+
+* Rename to Memory
+* Completely rewrite the over-complex codebase
+* Add "Analyzing message for new memories..." status indicator
+* Add corner notifications for successful memory operations
+* Use notification system for memory confirmations
+* Show error notifications in corner for failed operations
+* Standardize status messages to always show "Memory updated"
+
 ### 2.4.4: 2025-06-17
 
 * Remove pre-filtering entirely - analyze all memories for relevance

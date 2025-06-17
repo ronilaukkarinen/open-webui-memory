@@ -2,20 +2,30 @@
 
 ### ChatGPT-like automatic memory retrieval and storage for [Open WebUI](https://github.com/open-webui/open-webui)
 
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-2.4.4-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-3.0.0-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
 
-Automatically identify, retrieve and store memories from user conversations in Open WebUI. Successor to [Auto Memory](https://github.com/ronilaukkarinen/open-webui-auto-memory). This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
+Automatically identify, retrieve and store memories from user conversations in Open WebUI. This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
 
 ![image](https://github.com/user-attachments/assets/a76ec505-282a-4f40-b7c7-c9855a86610a)
 
-## Features
+This is a fork of [davixk's/nokodo's work](https://github.com/Davixk/open-webui-extensions).
 
-- **Automatic memory identification**: Extracts important user information from conversations
-- **Smart memory retrieval**: Finds relevant memories based on current context
-- **Memory operations**: Support for creating, updating, and deleting memories
-- **Flexible API support**: Works with OpenAI API, Ollama, and other compatible endpoints
-- **Contextual processing**: Uses AI to determine memory relevance and importance
-- **User privacy controls**: Configurable settings for memory processing visibility
+## ✨ What it does
+
+Auto Memory listens in on your conversations and detects facts, preferences, key moments, or anything useful for the assistant to remember about you.
+It stores these as separate memories, so future AI interactions stay personal and context-aware—without you micromanaging.
+
+You get:
+* Seamless journaling of your important info
+* Smarter, context-rich AI assistance
+* No more "please remember X" (unless you want to!)
+
+## 🧠 Memory extraction logic
+
+- New or changed facts from User's latest message are saved.
+- Explicit "please remember..." requests always create a Memory.
+- Avoids duplicates & merges conflicts by keeping only the latest.
+- Filters out ephemeral/trivial/short-term details.
 
 ## Installation
 

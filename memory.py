@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen (original by nokodo)
 description: Automatically identify and store valuable information from chats as Memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.0rc
+version: 3.0.0
 required_open_webui_version: >= 0.5.0
 """
 

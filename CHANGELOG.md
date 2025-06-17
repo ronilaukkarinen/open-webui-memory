@@ -1,4 +1,4 @@
-### 3.0.0rc: 2025-06-17
+### 3.0.0: 2025-06-17
 
 * Rename to Memory
 * Completely rewrite the over-complex codebase

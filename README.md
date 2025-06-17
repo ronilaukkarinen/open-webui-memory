@@ -1,4 +1,4 @@
-## 🧠 Auto Memory Retrieval and Storage Open WebUI function
+## 🧠 Open WebUI Memory function
 
 ### ChatGPT-like automatic memory retrieval and storage for [Open WebUI](https://github.com/open-webui/open-webui)
 

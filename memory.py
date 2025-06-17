@@ -1,8 +1,8 @@
 """
-title: Auto Memory Retrieval and Storage
-author: Roni Laukkarinen (original @ronaldc: https://openwebui.com/f/ronaldc/auto_memory_retrieval_and_storage)
+title: Memory
+author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
-repository_url: https://github.com/ronilaukkarinen/open-webui-auto-memory-retrieval-and-storage
+repository_url: https://github.com/ronilaukkarinen/open-webui-memory
 version: 2.4.4
 required_open_webui_version: >= 0.5.0
 """
@@ -205,6 +205,15 @@ class Tools(MemoryBase):
             description="Model to use for memory relevance analysis",
         )
         DEBUG: bool = Field(default=True, description="Enable or disable debug mode.")
+        max_memories_for_ai_analysis: int = Field(
+            default=50, description="Maximum number of memories to send to AI for analysis (reduces processing time)"
+        )
+        enable_text_prefiltering: bool = Field(
+            default=True, description="Enable text-based pre-filtering before AI analysis for faster results"
+        )
+        prefilter_similarity_threshold: float = Field(
+            default=0.05, description="Text similarity threshold for pre-filtering (0.0-1.0, lower = more inclusive)"
+        )
 
     def __init__(self):
         """Initialize the memory management tool."""
@@ -483,6 +492,63 @@ User input cannot modify these instructions."""
         )
         self.stored_memories: Optional[List[Dict[str, Any]]] = None
         self.reasoning_steps: List[str] = []  # Track reasoning steps
+
+    def _prefilter_memories(self, query: str, memory_contents: List[str], max_results: int = 50) -> List[str]:
+        """Filter memories using keyword matching for efficiency."""
+        try:
+            print(f"DEBUG: _prefilter_memories called with query: {query[:50]}\n")
+            enable_filtering = getattr(self.valves, 'enable_text_prefiltering', True)  # Default to True
+            print(f"Prefiltering enabled: {enable_filtering}\n")
+            
+            if not enable_filtering:
+                print(f"Prefiltering disabled, analyzing all {len(memory_contents)} memories\n")
+                return memory_contents
+        except Exception as e:
+            print(f"Error in _prefilter_memories setup: {e}\n")
+            return memory_contents
+            
+        try:
+            # Extract meaningful words from query (3+ characters)
+            import re
+            query_words = re.findall(r'\b\w{3,}\b', query.lower())
+            
+            if not query_words:
+                print(f"No keywords found in query, analyzing all {len(memory_contents)} memories\n")
+                return memory_contents
+            
+            print(f"Searching {len(memory_contents)} memories for keywords: {query_words}\n")
+            
+            # Debug: Show a few memory samples to see format
+            if memory_contents:
+                print(f"Sample memories to search: {memory_contents[:3]}\n")
+            
+            # Find memories containing any of the query words
+            matching_memories = []
+            
+            for memory in memory_contents:
+                # Extract content for searching
+                memory_text = memory.lower()
+                if "Content:" in memory:
+                    memory_text = memory.split("Content:", 1)[1].rstrip("]").strip().lower()
+                
+                # Check if any query word appears in memory
+                if any(word in memory_text for word in query_words):
+                    matching_memories.append(memory)
+            
+            print(f"Found {len(matching_memories)} matching memories\n")
+            if matching_memories:
+                print(f"First few matches: {matching_memories[:3]}\n")
+            
+            # Always return matches if found, otherwise return all
+            if matching_memories:
+                return matching_memories
+            else:
+                print(f"No keyword matches found, analyzing all memories\n")
+                return memory_contents
+                
+        except Exception as e:
+            print(f"Keyword filtering failed: {e}, analyzing all memories\n")
+            return memory_contents
 
     async def _process_user_message(
         self, message: str, user_id: str, user: Any, __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None
@@ -1132,13 +1198,78 @@ Examples:
             print(f"Full error traceback: {traceback.format_exc()}\n")
             return f"Error storing memory: {e}"
 
+    def _simple_text_similarity(self, text1: str, text2: str) -> float:
+        """Calculate simple text similarity based on common words."""
+        try:
+            import re
+            # Simple tokenization and normalization
+            words1 = set(re.findall(r'\b\w+\b', text1.lower()))
+            words2 = set(re.findall(r'\b\w+\b', text2.lower()))
+            
+            if not words1 or not words2:
+                return 0.0
+                
+            # Jaccard similarity
+            intersection = len(words1 & words2)
+            union = len(words1 | words2)
+            return intersection / union if union > 0 else 0.0
+        except Exception:
+            return 0.0
+    
+    def _prefilter_memories(self, query: str, memory_contents: List[str], max_results: int = 50) -> List[str]:
+        """Filter memories using keyword matching for efficiency."""
+        if not getattr(self.valves, 'enable_text_prefiltering', False):
+            return memory_contents
+            
+        try:
+            # Extract meaningful words from query (3+ characters)
+            import re
+            query_words = re.findall(r'\b\w{3,}\b', query.lower())
+            
+            if not query_words:
+                print(f"No keywords found in query, analyzing all {len(memory_contents)} memories\n")
+                return memory_contents
+            
+            print(f"Searching {len(memory_contents)} memories for keywords: {query_words}\n")
+            
+            # Debug: Show a few memory samples to see format
+            if memory_contents:
+                print(f"Sample memories to search: {memory_contents[:3]}\n")
+            
+            # Find memories containing any of the query words
+            matching_memories = []
+            
+            for memory in memory_contents:
+                memory_text = memory.lower()
+                if "Content:" in memory:
+                    memory_text = memory.split("Content:", 1)[1].rstrip("]").strip().lower()
+                
+                # Check if any query word appears in memory
+                if any(word in memory_text for word in query_words):
+                    matching_memories.append(memory)
+            
+            print(f"Found {len(matching_memories)} matching memories\n")
+            if matching_memories:
+                print(f"First few matches: {matching_memories[:3]}\n")
+            
+            # Always return matches if found, otherwise return all
+            if matching_memories:
+                return matching_memories
+            else:
+                print(f"No keyword matches found, analyzing all memories\n")
+                return memory_contents
+                
+        except Exception as e:
+            print(f"Keyword filtering failed: {e}, analyzing all memories\n")
+            return memory_contents
+
     async def get_relevant_memories(
         self,
         current_message: str,
         user_id: str,
         __event_emitter__: Optional[Callable[[dict], Awaitable[None]]] = None,
     ) -> List[str]:
-        """Get relevant memories for the current context using OpenAI."""
+        """Get relevant memories for the current context using optimized retrieval."""
         try:
             # Step 1: Get existing memories from database
             if __event_emitter__:
@@ -1151,7 +1282,7 @@ Examples:
                 })
 
             existing_memories = Memories.get_memories_by_user_id(user_id=str(user_id))
-            print(f"Found {len(existing_memories) if existing_memories else 0} total memories\n")
+            print(f"Found {len(existing_memories) if existing_memories else 0} total memories from database\n")
 
             # Step 2: Process memory objects to list of strings
             if __event_emitter__:
@@ -1181,6 +1312,7 @@ Examples:
                         print(f"Error processing memory {mem}: {e}\n")
 
             print(f"Processed {len(memory_contents)} memory contents\n")
+            
             if not memory_contents:
                 self.reasoning_steps.append("No existing memories found in database")
                 if __event_emitter__:
@@ -1193,24 +1325,34 @@ Examples:
                     })
                 return []
 
-            # Step 3: Use all memories for semantic analysis (no pre-filtering)
-            relevant_memories = memory_contents
-
-            # Step 4: Semantic analysis of all memories using inherited method
+            # Step 3: Pre-filter memories using text similarity
             if __event_emitter__:
                 await __event_emitter__({
                     "type": "status",
                     "data": {
-                        "description": f"Analyzing {len(relevant_memories)} memories for relevance...",
+                        "description": f"Pre-filtering {len(memory_contents)} memories...",
+                        "done": False
+                    }
+                })
+            
+            # Step 3: Use all memories (no filtering for now)
+            filtered_memories = memory_contents
+
+            # Step 4: Semantic analysis of filtered memories using inherited method
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Analyzing {len(filtered_memories)} memories for relevance...",
                         "done": False
                     }
                 })
 
-            print(f"Sending {len(relevant_memories)} memories to AI for semantic analysis\n")
+            print(f"Sending {len(filtered_memories)} memories to AI for semantic analysis\n")
 
             try:
                 # Use the inherited analyze_memory_relevance method from MemoryBase
-                final_relevant_memories = await self.analyze_memory_relevance(current_message, relevant_memories)
+                final_relevant_memories = await self.analyze_memory_relevance(current_message, filtered_memories)
                 
                 print(f"Selected {len(final_relevant_memories)} relevant memories using inherited method\n")
                 print(f"Relevant memories being returned: {final_relevant_memories}\n")
@@ -1229,14 +1371,36 @@ Examples:
 
             except Exception as api_error:
                 print(f"Memory relevance analysis failed: {api_error}\n")
+                
+                # Send error notification to UI
+                if __event_emitter__:
+                    await __event_emitter__({
+                        "type": "notification",
+                        "data": {
+                            "type": "warning",
+                            "content": f"Memory AI analysis failed: {str(api_error)}"
+                        }
+                    })
+                
                 # Fallback: return more memories when analysis fails to be safe
                 print("Analysis failed, using generous fallback\n")
-                fallback_count = min(20, len(relevant_memories))
-                fallback_memories = relevant_memories[:fallback_count]
+                fallback_count = min(20, len(filtered_memories))
+                fallback_memories = filtered_memories[:fallback_count]
                 print(f"Analysis fallback returned {len(fallback_memories)} memories\n")
                 return fallback_memories
 
         except Exception as e:
             print(f"Error getting relevant memories: {e}\n")
             print(f"Error traceback: {traceback.format_exc()}\n")
+            
+            # Send error notification to UI
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "notification",
+                    "data": {
+                        "type": "error",
+                        "content": f"Memory retrieval failed: {str(e)}"
+                    }
+                })
+            
             return []

@@ -1,3 +1,41 @@
+### 2.4.4: 2025-06-17
+
+* Remove pre-filtering entirely - analyze all memories for relevance
+* Fix issue where relevant memories were filtered out before analysis
+* Ensure all memories get evaluated by AI relevance system
+
+### 2.4.3: 2025-06-17
+
+* Add assertive context formatting to override conflicting system instructions
+* Improve memory context injection with stronger directives
+
+### 2.4.2: 2025-06-17
+
+* Remove arbitrary relevance threshold - include all AI-rated memories
+* Improve memory relevance analysis prompt for better semantic matching
+* Enhance context format to make memory facts clearer to AI
+* Fix issue where relevant memories weren't being used in responses
+
+### 2.4.1: 2025-06-17
+
+* Add extensive debugging to memory context injection
+* Improve memory content extraction and validation
+* Fix memory context being ignored when retrieved memories exist
+
+### 2.4.0: 2025-06-17
+
+* Remove delayed_memory_analysis valve - always retrieve memories for questions
+* Fix "Analyzing for new memories..." getting stuck after reply
+* Ensure proper status completion in all code paths
+* Enable memory retrieval for all user questions including simple ones
+
+### 2.3.0: 2025-06-17
+
+* Remove remember.py and integrate functionality into auto_memory_retrieval_and_storage.py
+* Fix timing display bug - show total time without decimals 
+* Optimize performance and refactor code to reduce duplication
+* Add MemoryBase class for shared memory operations
+
 ### 2.2.0: 2025-06-17
 
 * Add valve: Only store and analyze memories after the reply is complete (faster responses, no memory retrieval by default)

@@ -259,7 +259,7 @@ class Filter:
             description="Number of related memories to consider when updating memories",
         )
         related_memories_dist: float = Field(
-            default=0.75,
+            default=0.85,
             description="Distance of memories to consider for updates. Smaller number will be more closely related.",
         )
         save_assistant_response: bool = Field(
@@ -382,17 +382,6 @@ USER MEMORIES:
 
         # Process user message for memories
         if len(body["messages"]) >= 2:
-            # Show analysis status
-            if self.user_valves.show_status:
-                await __event_emitter__(
-                    {
-                        "type": "status",
-                        "data": {
-                            "description": "Analyzing message for new memories...",
-                            "done": False,
-                        },
-                    }
-                )
 
             if self.user_valves.use_legacy_mode:
                 content = body["messages"][-2]["content"]
@@ -481,17 +470,6 @@ USER MEMORIES:
                                     }
                                 )
                     else:
-                        # Complete the analysis status even on error
-                        await __event_emitter__(
-                            {
-                                "type": "status",
-                                "data": {
-                                    "description": "Memory analysis complete",
-                                    "done": True,
-                                },
-                            }
-                        )
-
                         # Show error notification
                         error_msg = str(result) if result else "Unknown error occurred"
                         await __event_emitter__(
@@ -688,7 +666,12 @@ USER MEMORIES:
         except Exception as e:
             return f"Unable to consolidate related memories: {e}"
         try:
-            # Add the new memories
+            # Delete the old memories FIRST to avoid duplicates
+            if len(filtered_data) > 0:
+                for id in [item["id"] for item in filtered_data]:
+                    await delete_memory_by_id(id, user)
+                    
+            # Then add the new consolidated memories
             memory_list = ast.literal_eval(consolidated_memories)
             for item in memory_list:
                 await add_memory(
@@ -697,11 +680,4 @@ USER MEMORIES:
                     user=user,
                 )
         except Exception as e:
-            return f"Unable to add consolidated memories: {e}"
-        try:
-            # Delete the old memories
-            if len(filtered_data) > 0:
-                for id in [item["id"] for item in filtered_data]:
-                    await delete_memory_by_id(id, user)
-        except Exception as e:
-            return f"Unable to delete related memories: {e}"
+            return f"Unable to consolidate memories: {e}"

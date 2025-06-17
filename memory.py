@@ -25,6 +25,7 @@ from open_webui.routers.memories import (
     delete_memory_by_id,
     query_memory,
     QueryMemoryForm,
+    get_memories,
 )
 
 STRINGIFIED_MESSAGE_TEMPLATE = "-{index}. {role}: ```{content}```"
@@ -297,7 +298,7 @@ class Filter:
     def __init__(self):
         self.valves = self.Valves()
 
-    def inlet(
+    async def inlet(
         self,
         body: dict,
         __event_emitter__: Callable[[Any], Awaitable[None]],
@@ -305,7 +306,70 @@ class Filter:
     ) -> dict:
         print(f"inlet:{__name__}")
         print(f"inlet:user:{__user__}")
+        
+        # Always inject all memories for context
+        if __user__:
+            try:
+                user = Users.get_user_by_id(__user__["id"])
+                memories = await self.get_all_memories(user)
+                if memories:
+                    self.inject_memories_into_conversation(body, memories)
+            except Exception as e:
+                print(f"Error retrieving memories: {e}")
+        
         return body
+    
+    async def get_all_memories(self, user) -> list:
+        """Retrieve ALL memories for the user without any filtering."""
+        try:
+            # Get all memories for the user
+            memories_result = await get_memories(user=user)
+            
+            if memories_result and hasattr(memories_result, 'data'):
+                memories = [memory.content for memory in memories_result.data]
+                print(f"Retrieved {len(memories)} memories for user")
+                return memories
+            elif isinstance(memories_result, list):
+                memories = [memory.content for memory in memories_result if hasattr(memory, 'content')]
+                print(f"Retrieved {len(memories)} memories for user")
+                return memories
+            return []
+        except Exception as e:
+            print(f"Error getting memories: {e}")
+            return []
+    
+    def inject_memories_into_conversation(self, body: dict, memories: list):
+        """Inject all memories into the conversation with clear AI instructions."""
+        if not memories or not body.get("messages"):
+            return
+            
+        # Create memory context with clear instructions for the AI
+        memory_context = f"""<MEMORY_CONTEXT>
+You have access to the user's personal memories below. These are facts about the user that may be relevant to your conversation.
+
+IMPORTANT INSTRUCTIONS:
+- Only reference memories when they are directly relevant to the current conversation
+- Do not list, enumerate, or mention memories unless specifically asked
+- Do not say things like "I remember you mentioned..." or "Based on your memories..."
+- Use the information naturally as context to provide better, more personalized responses
+- If memories are not relevant to the current topic, ignore them completely
+
+USER MEMORIES:
+{chr(10).join(f"- {memory}" for memory in memories)}
+</MEMORY_CONTEXT>
+
+"""
+        
+        # Add memory context to the first user message if it exists
+        if body["messages"]:
+            # Find the first user message
+            for i, message in enumerate(body["messages"]):
+                if message.get("role") == "user":
+                    # Prepend memory context to the user's message
+                    original_content = message.get("content", "")
+                    message["content"] = memory_context + original_content
+                    print(f"Injected {len(memories)} memories into conversation")
+                    break
 
     async def outlet(
         self,
@@ -331,7 +395,11 @@ class Filter:
                 )
 
             if self.user_valves.use_legacy_mode:
-                prompt_string = body["messages"][-2]["content"]
+                content = body["messages"][-2]["content"]
+                # Remove memory context if it was injected
+                if content.startswith("<MEMORY_CONTEXT>"):
+                    content = content.split("</MEMORY_CONTEXT>\n\n", 1)[-1]
+                prompt_string = content
             else:
                 stringified_messages = []
                 for i in range(1, self.user_valves.messages_to_consider + 1):
@@ -339,10 +407,14 @@ class Filter:
                         # Check if we have enough messages to safely access this index
                         if i <= len(body["messages"]):
                             message = body["messages"][-i]
+                            content = message["content"]
+                            # Remove memory context if it was injected from any user message
+                            if message["role"] == "user" and content.startswith("<MEMORY_CONTEXT>"):
+                                content = content.split("</MEMORY_CONTEXT>\n\n", 1)[-1]
                             stringified_message = STRINGIFIED_MESSAGE_TEMPLATE.format(
                                 index=i,
                                 role=message["role"],
-                                content=message["content"],
+                                content=content,
                             )
                             stringified_messages.append(stringified_message)
                         else:

@@ -7,6 +7,9 @@
 * Use notification system for memory confirmations
 * Show error notifications in corner for failed operations
 * Standardize status messages to always show "Memory updated"
+* Add memory retrieval feature that injects ALL user memories into conversations as context
+* Implement dual functionality: memory saving and memory retrieval working together
+* Add proper memory context filtering to prevent analysis loops
 
 ### 2.4.4: 2025-06-17
 

@@ -10,6 +10,8 @@
 * Add memory retrieval feature that injects ALL user memories into conversations as context
 * Implement dual functionality: memory saving and memory retrieval working together
 * Add proper memory context filtering to prevent analysis loops
+* Safe consolidation of memories, do not delete related memories without hesitation
+* Fix duplicate memory storing issue
 
 ### 2.4.4: 2025-06-17
 

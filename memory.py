@@ -259,7 +259,7 @@ class Filter:
             description="Number of related memories to consider when updating memories",
         )
         related_memories_dist: float = Field(
-            default=0.85,
+            default=0.95,
             description="Distance of memories to consider for updates. Smaller number will be more closely related.",
         )
         save_assistant_response: bool = Field(
@@ -645,12 +645,14 @@ USER MEMORIES:
                 if item["distance"] < self.valves.related_memories_dist
             ]
             # Limit to relevant data to minimize tokens
-            print(f"Filtered data: {filtered_data}")
+            print(f"All related memories: {structured_data}")
+            print(f"Filtered data (threshold {self.valves.related_memories_dist}): {filtered_data}")
             fact_list = [
                 {"fact": item["fact"], "created_at": item["metadata"]["created_at"]}
                 for item in filtered_data
             ]
             fact_list.append({"fact": memory, "created_at": time.time()})
+            print(f"Fact list for consolidation: {fact_list}")
         except Exception as e:
             return f"Unable to restructure and filter related memories: {e}"
         # Consolidate conflicts or overlaps
@@ -663,20 +665,41 @@ USER MEMORIES:
                 ),
                 prompt=json.dumps(fact_list),
             )
+            print(f"Consolidated memories response: {consolidated_memories}")
         except Exception as e:
             return f"Unable to consolidate related memories: {e}"
         try:
-            # Delete the old memories FIRST to avoid duplicates
-            if len(filtered_data) > 0:
-                for id in [item["id"] for item in filtered_data]:
-                    await delete_memory_by_id(id, user)
-                    
-            # Then add the new consolidated memories
+            # Parse the consolidated memories first
             memory_list = ast.literal_eval(consolidated_memories)
-            for item in memory_list:
+            
+            # Only proceed with deletion/addition if consolidation actually happened
+            original_facts = [item["fact"] for item in fact_list]
+            
+            # Check if consolidation actually changed anything
+            if len(memory_list) < len(original_facts):
+                # Consolidation happened - some memories were merged/removed
+                print(f"Consolidation detected: {len(original_facts)} -> {len(memory_list)} memories")
+                
+                # Delete the old related memories
+                if len(filtered_data) > 0:
+                    for id in [item["id"] for item in filtered_data]:
+                        await delete_memory_by_id(id, user)
+                        print(f"Deleted old memory: {id}")
+                        
+                # Add the new consolidated memories
+                for item in memory_list:
+                    await add_memory(
+                        request=Request(scope={"type": "http", "app": webui_app}),
+                        form_data=AddMemoryForm(content=item),
+                        user=user,
+                    )
+                    print(f"Added consolidated memory: {item}")
+            else:
+                # No real consolidation happened - just add the new memory
+                print("No consolidation needed - just adding new memory")
                 await add_memory(
                     request=Request(scope={"type": "http", "app": webui_app}),
-                    form_data=AddMemoryForm(content=item),
+                    form_data=AddMemoryForm(content=memory),
                     user=user,
                 )
         except Exception as e:

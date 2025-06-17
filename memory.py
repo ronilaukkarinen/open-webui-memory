@@ -1,9 +1,9 @@
 """
 title: Memory
-author: Roni Laukkarinen (original by nokodo)
-description: Automatically identify and store valuable information from chats as Memories.
+author: Roni Laukkarinen
+description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.0
+version: 3.0.1
 required_open_webui_version: >= 0.5.0
 """
 
@@ -270,6 +270,10 @@ class Filter:
             default=True,
             description="Show simplified 'Memory updated' message instead of detailed memory content.",
         )
+        excluded_models: str = Field(
+            default="", 
+            description="Comma-separated list of model names to exclude from memory processing. Use lowercase with hyphens (e.g., 'english-refiner,translator,obfuscator')"
+        )
 
     class UserValves(BaseModel):
         show_status: bool = Field(
@@ -306,6 +310,12 @@ class Filter:
     ) -> dict:
         print(f"inlet:{__name__}")
         print(f"inlet:user:{__user__}")
+        
+        # Check if current model should be excluded
+        if self.valves.excluded_models:
+            if self._should_exclude_model(body, self.valves.excluded_models):
+                print("MEMORY FILTER: Skipping memory processing for excluded model")
+                return body
         
         # Always inject all memories for context
         if __user__:
@@ -371,6 +381,59 @@ USER MEMORIES:
                     print(f"Injected {len(memories)} memories into conversation")
                     break
 
+    def _should_exclude_model(self, body: dict, excluded_models: str) -> bool:
+        """
+        Check if the current model should be excluded from memory processing.
+        Supports multiple model identifier fields for robust filtering.
+        """
+        if not excluded_models:
+            return False
+            
+        # Parse excluded models list
+        excluded_models_list = [model.strip().strip('"\'') for model in excluded_models.split(",")]
+        
+        # Check multiple possible model identifier fields
+        current_model = body.get("model", "")
+        model_id = body.get("model_id", "")
+        
+        # Check for OpenWebUI model/character names in nested structures
+        model_name = ""
+        model_title = ""
+        
+        # Look for model info in nested chat structure
+        if "chat" in body and isinstance(body["chat"], dict):
+            if "models" in body["chat"] and isinstance(body["chat"]["models"], list):
+                for model_info in body["chat"]["models"]:
+                    if isinstance(model_info, dict):
+                        if "name" in model_info:
+                            model_name = model_info.get("name", "")
+                        if "title" in model_info:
+                            model_title = model_info.get("title", "")
+        
+        # Also check direct model info
+        if "model_info" in body and isinstance(body["model_info"], dict):
+            model_name = body["model_info"].get("name", model_name)
+            model_title = body["model_info"].get("title", model_title)
+        
+        # Debug logging
+        print(f"MEMORY FILTER DEBUG: Checking exclusion for request")
+        print(f"MEMORY FILTER DEBUG: body.model: '{current_model}'")
+        print(f"MEMORY FILTER DEBUG: body.model_id: '{model_id}'")
+        print(f"MEMORY FILTER DEBUG: model_name from nested: '{model_name}'")
+        print(f"MEMORY FILTER DEBUG: model_title from nested: '{model_title}'")
+        print(f"MEMORY FILTER DEBUG: Available body keys: {list(body.keys())}")
+        print(f"MEMORY FILTER DEBUG: Excluded models list: {excluded_models_list}")
+        
+        # Check all possible model identifiers against exclusion list
+        models_to_check = [current_model, model_id, model_name, model_title]
+        for model_identifier in models_to_check:
+            if model_identifier and model_identifier in excluded_models_list:
+                print(f"MEMORY FILTER: Excluding model: {model_identifier}")
+                return True
+        
+        print(f"MEMORY FILTER DEBUG: No exclusion match found, proceeding with memory processing")
+        return False
+
     async def outlet(
         self,
         body: dict,
@@ -379,6 +442,12 @@ USER MEMORIES:
     ) -> dict:
         user = Users.get_user_by_id(__user__["id"])
         self.user_valves: Filter.UserValves = __user__.get("valves", self.UserValves())
+
+        # Check if current model should be excluded from memory processing
+        if self.valves.excluded_models:
+            if self._should_exclude_model(body, self.valves.excluded_models):
+                print("MEMORY FILTER: Skipping memory processing for excluded model")
+                return body
 
         # Process user message for memories
         if len(body["messages"]) >= 2:

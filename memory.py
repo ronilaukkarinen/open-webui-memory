@@ -275,8 +275,8 @@ class Filter:
             description="Comma-separated list of model names to exclude from memory processing. Use lowercase with hyphens (e.g., 'english-refiner,translator,obfuscator')"
         )
         model_specific_settings: str = Field(
-            default='{"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "thirdeyeai/Qwen2.5-0.5B-Instruct-uncensored:Q4_0"}}',
-            description='JSON object with per-model API settings. Format: {"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "thirdeyeai/Qwen2.5-0.5B-Instruct-uncensored:Q4_0"}}.'
+            default='{"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "qwen2.5:7b"}}',
+            description='JSON object with per-model API settings. Format: {"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "qwen2.5:7b"}}.'
         )
 
     class UserValves(BaseModel):
@@ -689,6 +689,8 @@ USER MEMORIES:
             prompt=input_text,
             body=body,
         )
+        print(f"MEMORY DEBUG: LLM response for memory identification: '{memories}'")
+        print(f"MEMORY DEBUG: Input text was: '{input_text}'")
         return memories
 
     async def query_openai_api(self, system_prompt: str, prompt: str, body: dict = None) -> str:

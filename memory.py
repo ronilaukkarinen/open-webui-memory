@@ -274,6 +274,10 @@ class Filter:
             default="", 
             description="Comma-separated list of model names to exclude from memory processing. Use lowercase with hyphens (e.g., 'english-refiner,translator,obfuscator')"
         )
+        model_specific_settings: str = Field(
+            default='{"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "thirdeyeai/Qwen2.5-0.5B-Instruct-uncensored:Q4_0"}}',
+            description='JSON object with per-model API settings. Format: {"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "thirdeyeai/Qwen2.5-0.5B-Instruct-uncensored:Q4_0"}}.'
+        )
 
     class UserValves(BaseModel):
         show_status: bool = Field(
@@ -434,6 +438,83 @@ USER MEMORIES:
         print(f"MEMORY FILTER DEBUG: No exclusion match found, proceeding with memory processing")
         return False
 
+    def _get_current_model_name(self, body: dict) -> str:
+        """
+        Extract the current Open WebUI model name from the request body.
+        Returns empty string if no model name is found.
+        """
+        # Check multiple possible model identifier fields
+        current_model = body.get("model", "")
+        
+        # Check for OpenWebUI model/character names in nested structures
+        model_name = ""
+        model_title = ""
+        
+        # Look for model info in nested chat structure
+        if "chat" in body and isinstance(body["chat"], dict):
+            if "models" in body["chat"] and isinstance(body["chat"]["models"], list):
+                for model_info in body["chat"]["models"]:
+                    if isinstance(model_info, dict):
+                        if "name" in model_info:
+                            model_name = model_info.get("name", "")
+                        if "title" in model_info:
+                            model_title = model_info.get("title", "")
+        
+        # Also check direct model info
+        if "model_info" in body and isinstance(body["model_info"], dict):
+            model_name = body["model_info"].get("name", model_name)
+            model_title = body["model_info"].get("title", model_title)
+        
+        # Priority: model_name > model_title > current_model
+        for candidate in [model_name, model_title, current_model]:
+            if candidate:
+                return candidate
+        
+        return ""
+
+    def _get_model_specific_settings(self, model_name: str) -> dict:
+        """
+        Parse model-specific settings and return settings for the specified model.
+        Returns empty dict if no specific settings found or if parsing fails.
+        """
+        if not self.valves.model_specific_settings or not model_name:
+            return {}
+        
+        try:
+            settings_dict = json.loads(self.valves.model_specific_settings)
+            return settings_dict.get(model_name, {})
+        except (json.JSONDecodeError, TypeError) as e:
+            print(f"Error parsing model_specific_settings: {e}")
+            return {}
+
+    def _get_effective_settings(self, body: dict) -> tuple[str, str, str]:
+        """
+        Get effective API settings (URL, model, key) for the current request.
+        Uses model-specific settings if available, otherwise falls back to global/user settings.
+        Returns tuple of (api_url, model, api_key)
+        """
+        # Get current model name
+        current_model_name = self._get_current_model_name(body)
+        
+        # Get model-specific settings
+        model_settings = self._get_model_specific_settings(current_model_name)
+        
+        # Start with global/user settings as fallback
+        api_url = self.user_valves.openai_api_url or self.valves.openai_api_url
+        model = self.user_valves.model or self.valves.model
+        api_key = self.user_valves.api_key or self.valves.api_key
+        
+        # Override with model-specific settings if available
+        if model_settings:
+            api_url = model_settings.get("openai_api_url", api_url)
+            model = model_settings.get("model", model)
+            api_key = model_settings.get("api_key", api_key)
+            print(f"Using model-specific settings for '{current_model_name}': url={api_url}, model={model}")
+        else:
+            print(f"Using global settings for model '{current_model_name}' (no specific settings found)")
+        
+        return api_url, model, api_key
+
     async def outlet(
         self,
         body: dict,
@@ -480,13 +561,13 @@ USER MEMORIES:
                     except Exception as e:
                         print(f"Error stringifying messages: {e}")
                 prompt_string = "\n".join(stringified_messages)
-            memories = await self.identify_memories(prompt_string)
+            memories = await self.identify_memories(prompt_string, body)
             if (
                 memories.startswith("[")
                 and memories.endswith("]")
                 and len(memories) != 2
             ):
-                result = await self.process_memories(memories, user)
+                result = await self.process_memories(memories, user, body)
 
                 # Get user valves for status message
                 if self.user_valves.show_status:
@@ -598,7 +679,7 @@ USER MEMORIES:
                     )
         return body
 
-    async def identify_memories(self, input_text: str) -> str:
+    async def identify_memories(self, input_text: str, body: dict = None) -> str:
         memories = await self.query_openai_api(
             system_prompt=(
                 IDENTIFY_MEMORIES_PROMPT
@@ -606,15 +687,20 @@ USER MEMORIES:
                 else LEGACY_IDENTIFY_MEMORIES_PROMPT
             ),
             prompt=input_text,
+            body=body,
         )
         return memories
 
-    async def query_openai_api(self, system_prompt: str, prompt: str) -> str:
+    async def query_openai_api(self, system_prompt: str, prompt: str, body: dict = None) -> str:
 
-        # Use user-specific values if provided, otherwise use global values
-        api_url = self.user_valves.openai_api_url or self.valves.openai_api_url
-        model = self.user_valves.model or self.valves.model
-        api_key = self.user_valves.api_key or self.valves.api_key
+        # Use model-specific settings if available, otherwise use global/user values
+        if body:
+            api_url, model, api_key = self._get_effective_settings(body)
+        else:
+            # Fallback to original logic when body is not provided (backward compatibility)
+            api_url = self.user_valves.openai_api_url or self.valves.openai_api_url
+            model = self.user_valves.model or self.valves.model
+            api_key = self.user_valves.api_key or self.valves.api_key
 
         url = f"{api_url}/v1/chat/completions"
         headers = {
@@ -647,13 +733,14 @@ USER MEMORIES:
         self,
         memories: str,
         user: UserModel,
+        body: dict = None,
     ) -> bool:
         """Given a list of memories as a string, go through each memory, check for duplicates, then store the remaining memories."""
         try:
             memory_list = ast.literal_eval(memories)
             print(f"Auto Memory: identified {len(memory_list)} new memories")
             for memory in memory_list:
-                await self.store_memory(memory, user)
+                await self.store_memory(memory, user, body)
             return True
         except Exception as e:
             return e
@@ -662,6 +749,7 @@ USER MEMORIES:
         self,
         memory: str,
         user,
+        body: dict = None,
     ) -> str:
         """Given a memory, retrieve related memories. Update conflicting memories and consolidate memories as needed. Then store remaining memories."""
         try:
@@ -733,6 +821,7 @@ USER MEMORIES:
                     else LEGACY_CONSOLIDATE_MEMORIES_PROMPT
                 ),
                 prompt=json.dumps(fact_list),
+                body=body,
             )
             print(f"Consolidated memories response: {consolidated_memories}")
         except Exception as e:

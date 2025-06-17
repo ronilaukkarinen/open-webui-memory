@@ -1,6 +1,7 @@
 ### 3.0.1: 2025-06-18
 
 * Re-implement excluded_models
+* Add model-based settings
 
 ### 3.0.0: 2025-06-17
 

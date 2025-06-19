@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.3
+version: 3.0.4
 required_open_webui_version: >= 0.5.0
 """
 
@@ -43,7 +43,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 4. Your goal is to capture anything that might be valuable for the "assistant" to remember about the User, to personalize and enrich future interactions.
 4b. CRITICAL: Do NOT extract memories from Assistant responses that are clearly just summarizing or listing existing knowledge about the user. Only extract from genuine new information provided by the User.
 5. If the User explicitly requests to "remember" or note down something in their latest message (-2), always include it.
-6. Avoid storing short-term or trivial details (e.g. user: "I'm reading this question right now", user: "I just woke up!", user: "Oh yeah, I saw that on TV the other day").
+6. Avoid storing short-term situational details or temporary actions (e.g. user: "I'm reading this question right now", user: "I just woke up!", user: "Oh yeah, I saw that on TV the other day"). However, DO capture personal preferences, interests, opinions, and persistent facts about the user (e.g. "I like berries", "I enjoy hiking", "I prefer tea over coffee", "I work in marketing").
 7. Return your result as a Python list of strings, **each string representing a separate Memory**. If no relevant info is found, **only** return an empty list (`[]`). No explanations, just the list.
 
 ---
@@ -108,7 +108,21 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 []
 ```
 
-**Example 5 - Memory Summary Request**
+**Example 5 - Simple Preference**
+-2. user: ```I like berries```
+-1. assistant: ```That's great! Berries are delicious and healthy. Do you have a favorite type of berry?```
+
+**Analysis**
+- The User (-2) is expressing a personal preference about food.
+- This is valuable personal information that should be remembered for future interactions.
+- Personal preferences like food likes/dislikes are important to capture.
+
+**Correct Output**
+```
+["User likes berries"]
+```
+
+**Example 6 - Memory Summary Request**
 -2. user: ```What do you know about me?```
 -1. assistant: ```Based on our conversations, here's what I know: You enjoy sci-fi movies, work as a software engineer, prefer coffee over tea, and live in Seattle. You also mentioned liking hiking and having a dog named Max.```
 
@@ -542,9 +556,13 @@ USER MEMORIES:
         """
         # Get current model name
         current_model_name = self._get_current_model_name(body)
+        print(f"MEMORY DEBUG: Detected model name: '{current_model_name}'")
 
         # Get model-specific settings
         model_settings = self._get_model_specific_settings(current_model_name)
+        print(f"MEMORY DEBUG: Model-specific settings found: {bool(model_settings)}")
+        if model_settings:
+            print(f"MEMORY DEBUG: Model settings: {model_settings}")
 
         # Start with global/user settings as fallback
         api_url = self.user_valves.openai_api_url or self.valves.openai_api_url
@@ -556,9 +574,9 @@ USER MEMORIES:
             api_url = model_settings.get("openai_api_url", api_url)
             model = model_settings.get("model", model)
             api_key = model_settings.get("api_key", api_key)
-            print(f"Using model-specific settings for '{current_model_name}': url={api_url}, model={model}")
+            print(f"MEMORY DEBUG: Using model-specific settings for '{current_model_name}': url={api_url}, LLM model={model}")
         else:
-            print(f"Using global settings for model '{current_model_name}' (no specific settings found)")
+            print(f"MEMORY DEBUG: Using global settings for model '{current_model_name}' (no specific settings found): LLM model={model}")
 
         return api_url, model, api_key
 
@@ -609,7 +627,9 @@ USER MEMORIES:
                         print(f"Error stringifying messages: {e}")
                 prompt_string = "\n".join(stringified_messages)
             try:
+                print(f"MEMORY DEBUG: About to call identify_memories with prompt length: {len(prompt_string)}")
                 memories = await self.identify_memories(prompt_string, body)
+                print(f"MEMORY DEBUG: identify_memories returned: '{memories}'")
             except Exception as e:
                 # Show error notification for memory identification failures
                 error_msg = str(e)
@@ -705,54 +725,43 @@ USER MEMORIES:
             print(f"ASSISTANT DEBUG: Last message role = {last_message.get('role', 'unknown')}")
             # Only save if the last message is actually from assistant
             if last_message.get("role") == "assistant":
-                last_assistant_message = last_message
                 print(f"ASSISTANT DEBUG: Proceeding to save assistant response")
+                try:
+                    print(f"ASSISTANT DEBUG: Adding assistant memory: {last_message['content'][:100]}...")
+                    memory_obj = await add_memory(
+                        request=Request(scope={"type": "http", "app": webui_app}),
+                        form_data=AddMemoryForm(content=last_message["content"]),
+                        user=user,
+                    )
+                    print(f"Assistant Memory Added: {memory_obj}")
+
+                    if self.user_valves.show_status:
+                        await __event_emitter__(
+                            {
+                                "type": "notification",
+                                "data": {
+                                    "type": "success",
+                                    "content": "Assistant memory saved",
+                                },
+                            }
+                        )
+                except Exception as e:
+                    print(f"Error adding assistant memory {str(e)}")
+
+                    if self.user_valves.show_status:
+                        await __event_emitter__(
+                            {
+                                "type": "notification",
+                                "data": {
+                                    "type": "error",
+                                    "content": f"Error saving assistant memory: {str(e)}",
+                                },
+                            }
+                        )
             else:
                 print(f"ASSISTANT DEBUG: Skipping - not an assistant message")
-                return body
         else:
             print(f"ASSISTANT DEBUG: Auto-save disabled or no messages")
-            return body
-            try:
-                print(f"ASSISTANT DEBUG: Adding assistant memory: {last_assistant_message['content'][:100]}...")
-                memory_obj = await add_memory(
-                    request=Request(scope={"type": "http", "app": webui_app}),
-                    form_data=AddMemoryForm(content=last_assistant_message["content"]),
-                    user=user,
-                )
-                print(f"Assistant Memory Added: {memory_obj}")
-
-                # Get user valves for status message
-                user_valves = user.settings.functions.get("valves", {}).get(
-                    "auto_memory", {}
-                )
-                if user_valves.get("show_status", True):
-                    await __event_emitter__(
-                        {
-                            "type": "notification",
-                            "data": {
-                                "type": "success",
-                                "content": "Assistant memory saved",
-                            },
-                        }
-                    )
-            except Exception as e:
-                print(f"Error adding assistant memory {str(e)}")
-
-                # Get user valves for status message
-                user_valves = user.settings.functions.get("valves", {}).get(
-                    "auto_memory", {}
-                )
-                if user_valves.get("show_status", True):
-                    await __event_emitter__(
-                        {
-                            "type": "notification",
-                            "data": {
-                                "type": "error",
-                                "content": f"Error saving assistant memory: {str(e)}",
-                            },
-                        }
-                    )
         return body
 
     async def identify_memories(self, input_text: str, body: dict = None) -> str:
@@ -795,7 +804,7 @@ USER MEMORIES:
 
         # Debug logging for API calls
         print(f"MEMORY API DEBUG: Making request to {url}")
-        print(f"MEMORY API DEBUG: Using model: {model}")
+        print(f"MEMORY API DEBUG: Using LLM model for memory identification: {model}")
         print(f"MEMORY API DEBUG: Request payload: {json.dumps(payload, indent=2)}")
 
         try:

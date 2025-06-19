@@ -2,7 +2,7 @@
 
 ### ChatGPT-like automatic memory retrieval and storage for [Open WebUI](https://github.com/open-webui/open-webui)
 
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-3.0.3-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Version](https://img.shields.io/badge/version-3.0.4-blue?style=for-the-badge) ![Open WebUI](https://img.shields.io/badge/Open%20WebUI-Compatible-orange?style=for-the-badge)
 
 Automatically identify, retrieve and store memories from user conversations in Open WebUI. This filter intelligently processes chat messages to extract meaningful information about users and stores it as memories for future reference.
 
@@ -29,12 +29,37 @@ You get:
 
 ## Installation
 
-1. Go to **Settings → Functions** and add the contents of `auto_memory_retrieval_and_storage.py` file, save
-2. If you want to use OpenAI API, you need to add your API key to the **OpenAI API key** field. For pollinations, use `https://text.pollinations.ai/openai`.
-3. If you want to use a local model, use Ollama API:
-    - Set **OpenAI API URL** to `http://localhost:11434/v1`
-    - Set **OpenAI API key** to `ollama`
-    - Set **Model** to the model you want to use (you can see the list with command `ollama list`)
+1. Go to **Settings → Functions** and add the contents of `memory.py` file, save
+2. Configure your AI model for memory identification:
+
+### OpenAI API (Recommended)
+
+- Set **OpenAI API key** to your OpenAI API key
+- Set **Model** to `gpt-4o` (default)
+- Leave **OpenAI API URL** as default (`https://api.openai.com`)
+
+### Alternative API Services
+
+- **Pollinations**: Set **OpenAI API URL** to `https://text.pollinations.ai/openai`
+
+### Local Models with Ollama
+
+- Set **OpenAI API URL** to `http://localhost:11434/v1`
+- Set **OpenAI API key** to `ollama`
+- Set **Model** to one of the recommended models:
+
+#### ✅ Recommended Ollama Models (tested for memory identification):
+
+- `mistral:7b-instruct` - Excellent instruction following
+- `qwen2.5:7b` - Good balance of performance and capability
+- `llama3.1:8b` - Works but may need more specific prompting
+
+#### ❌ Not Recommended:
+
+- GGUF models
+- Models without instruction tuning typically perform poorly
+
+**Note**: Memory identification requires models that can follow complex instructions and output structured data. If using local models, ensure they're instruction-tuned variants.
 
 ## Examples
 

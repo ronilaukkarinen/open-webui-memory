@@ -1,3 +1,8 @@
+### 3.0.4: 2025-06-20
+
+* Fix memory storing for local models
+* Add proper instuctions for recommended models
+
 ### 3.0.3: 2025-06-19
 
 * Add memory timestamp to memory context

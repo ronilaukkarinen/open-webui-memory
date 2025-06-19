@@ -1,6 +1,7 @@
 ### 3.0.3: 2025-06-19
 
 * Add memory timestamp to memory context
+* Do not extract pre-existing memories from assistant replies
 
 ### 3.0.2: 2025-06-19
 

@@ -37,9 +37,11 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 
 ** Key Instructions **
 1. Identify new or changed personal details from the User's **latest** message (-2) only. Older user messages may appear for context; do not re-store older facts unless explicitly repeated or modified in the last User message (-2).
+1b. IMPORTANT: If the User's message (-2) is asking about existing memories (e.g., "What do you know about me?", "What are my preferences?", "Tell me about myself"), and the Assistant's response (-1) is just summarizing existing information, return an empty list `[]`. Do NOT store the Assistant's summary as new memories.
 2. If the User's newest message contradicts an older statement (e.g., message -4 says "I love oranges" vs. message -2 says "I hate oranges"), extract only the updated info ("User hates oranges").
 3. Think of each Memory as a single "fact" or statement. Never combine multiple facts into one Memory. If the User mentions multiple distinct items, break them into separate entries.
 4. Your goal is to capture anything that might be valuable for the "assistant" to remember about the User, to personalize and enrich future interactions.
+4b. CRITICAL: Do NOT extract memories from Assistant responses that are clearly just summarizing or listing existing knowledge about the user. Only extract from genuine new information provided by the User.
 5. If the User explicitly requests to "remember" or note down something in their latest message (-2), always include it.
 6. Avoid storing short-term or trivial details (e.g. user: "I'm reading this question right now", user: "I just woke up!", user: "Oh yeah, I saw that on TV the other day").
 7. Return your result as a Python list of strings, **each string representing a separate Memory**. If no relevant info is found, **only** return an empty list (`[]`). No explanations, just the list.
@@ -100,6 +102,20 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 **Analysis**
 - The User message (-2) is clearly sarcastic and not meant to be taken literally. It does not contain any relevant information to store.
 - The other messages (-3, -1) are not relevant as they're not about the User.
+
+**Correct Output**
+```
+[]
+```
+
+**Example 5 - Memory Summary Request**
+-2. user: ```What do you know about me?```
+-1. assistant: ```Based on our conversations, here's what I know: You enjoy sci-fi movies, work as a software engineer, prefer coffee over tea, and live in Seattle. You also mentioned liking hiking and having a dog named Max.```
+
+**Analysis**
+- The User (-2) is asking for a summary of existing memories, not providing new information.
+- The Assistant (-1) is just reciting back previously stored information.
+- This is NOT new information about the user - it's just a summary of existing knowledge.
 
 **Correct Output**
 ```
@@ -683,9 +699,22 @@ USER MEMORIES:
                 print("Auto Memory: no new memories identified")
 
         # Process assistant response if auto-save is enabled
+        print(f"ASSISTANT DEBUG: save_assistant_response valve = {self.valves.save_assistant_response}")
         if self.valves.save_assistant_response and len(body["messages"]) > 0:
-            last_assistant_message = body["messages"][-1]
+            last_message = body["messages"][-1]
+            print(f"ASSISTANT DEBUG: Last message role = {last_message.get('role', 'unknown')}")
+            # Only save if the last message is actually from assistant
+            if last_message.get("role") == "assistant":
+                last_assistant_message = last_message
+                print(f"ASSISTANT DEBUG: Proceeding to save assistant response")
+            else:
+                print(f"ASSISTANT DEBUG: Skipping - not an assistant message")
+                return body
+        else:
+            print(f"ASSISTANT DEBUG: Auto-save disabled or no messages")
+            return body
             try:
+                print(f"ASSISTANT DEBUG: Adding assistant memory: {last_assistant_message['content'][:100]}...")
                 memory_obj = await add_memory(
                     request=Request(scope={"type": "http", "app": webui_app}),
                     form_data=AddMemoryForm(content=last_assistant_message["content"]),

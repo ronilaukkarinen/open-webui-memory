@@ -1,3 +1,8 @@
+### 3.0.2: 2025-06-19
+
+* Improve debugging and error logging
+* Add notifications from API call errors
+
 ### 3.0.1: 2025-06-18
 
 * Re-implement excluded_models

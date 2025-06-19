@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.1
+version: 3.0.2
 required_open_webui_version: >= 0.5.0
 """
 
@@ -271,7 +271,7 @@ class Filter:
             description="Show simplified 'Memory updated' message instead of detailed memory content.",
         )
         excluded_models: str = Field(
-            default="", 
+            default="",
             description="Comma-separated list of model names to exclude from memory processing. Use lowercase with hyphens (e.g., 'english-refiner,translator,obfuscator')"
         )
         model_specific_settings: str = Field(
@@ -314,13 +314,13 @@ class Filter:
     ) -> dict:
         print(f"inlet:{__name__}")
         print(f"inlet:user:{__user__}")
-        
+
         # Check if current model should be excluded
         if self.valves.excluded_models:
             if self._should_exclude_model(body, self.valves.excluded_models):
                 print("MEMORY FILTER: Skipping memory processing for excluded model")
                 return body
-        
+
         # Always inject all memories for context
         if __user__:
             try:
@@ -330,15 +330,15 @@ class Filter:
                     self.inject_memories_into_conversation(body, memories)
             except Exception as e:
                 print(f"Error retrieving memories: {e}")
-        
+
         return body
-    
+
     async def get_all_memories(self, user) -> list:
         """Retrieve ALL memories for the user without any filtering."""
         try:
             # Get all memories for the user
             memories_result = await get_memories(user=user)
-            
+
             if memories_result and hasattr(memories_result, 'data'):
                 memories = [memory.content for memory in memories_result.data]
                 print(f"Retrieved {len(memories)} memories for user")
@@ -351,12 +351,12 @@ class Filter:
         except Exception as e:
             print(f"Error getting memories: {e}")
             return []
-    
+
     def inject_memories_into_conversation(self, body: dict, memories: list):
         """Inject all memories into the conversation with clear AI instructions."""
         if not memories or not body.get("messages"):
             return
-            
+
         # Create memory context with clear instructions for the AI
         memory_context = f"""<MEMORY_CONTEXT>
 You have access to the user's personal memories below. These are facts about the user that may be relevant to your conversation.
@@ -373,7 +373,7 @@ USER MEMORIES:
 </MEMORY_CONTEXT>
 
 """
-        
+
         # Add memory context to the first user message if it exists
         if body["messages"]:
             # Find the first user message
@@ -392,18 +392,18 @@ USER MEMORIES:
         """
         if not excluded_models:
             return False
-            
+
         # Parse excluded models list
         excluded_models_list = [model.strip().strip('"\'') for model in excluded_models.split(",")]
-        
+
         # Check multiple possible model identifier fields
         current_model = body.get("model", "")
         model_id = body.get("model_id", "")
-        
+
         # Check for OpenWebUI model/character names in nested structures
         model_name = ""
         model_title = ""
-        
+
         # Look for model info in nested chat structure
         if "chat" in body and isinstance(body["chat"], dict):
             if "models" in body["chat"] and isinstance(body["chat"]["models"], list):
@@ -413,12 +413,12 @@ USER MEMORIES:
                             model_name = model_info.get("name", "")
                         if "title" in model_info:
                             model_title = model_info.get("title", "")
-        
+
         # Also check direct model info
         if "model_info" in body and isinstance(body["model_info"], dict):
             model_name = body["model_info"].get("name", model_name)
             model_title = body["model_info"].get("title", model_title)
-        
+
         # Debug logging
         print(f"MEMORY FILTER DEBUG: Checking exclusion for request")
         print(f"MEMORY FILTER DEBUG: body.model: '{current_model}'")
@@ -427,14 +427,14 @@ USER MEMORIES:
         print(f"MEMORY FILTER DEBUG: model_title from nested: '{model_title}'")
         print(f"MEMORY FILTER DEBUG: Available body keys: {list(body.keys())}")
         print(f"MEMORY FILTER DEBUG: Excluded models list: {excluded_models_list}")
-        
+
         # Check all possible model identifiers against exclusion list
         models_to_check = [current_model, model_id, model_name, model_title]
         for model_identifier in models_to_check:
             if model_identifier and model_identifier in excluded_models_list:
                 print(f"MEMORY FILTER: Excluding model: {model_identifier}")
                 return True
-        
+
         print(f"MEMORY FILTER DEBUG: No exclusion match found, proceeding with memory processing")
         return False
 
@@ -445,11 +445,11 @@ USER MEMORIES:
         """
         # Check multiple possible model identifier fields
         current_model = body.get("model", "")
-        
+
         # Check for OpenWebUI model/character names in nested structures
         model_name = ""
         model_title = ""
-        
+
         # Look for model info in nested chat structure
         if "chat" in body and isinstance(body["chat"], dict):
             if "models" in body["chat"] and isinstance(body["chat"]["models"], list):
@@ -459,17 +459,17 @@ USER MEMORIES:
                             model_name = model_info.get("name", "")
                         if "title" in model_info:
                             model_title = model_info.get("title", "")
-        
+
         # Also check direct model info
         if "model_info" in body and isinstance(body["model_info"], dict):
             model_name = body["model_info"].get("name", model_name)
             model_title = body["model_info"].get("title", model_title)
-        
+
         # Priority: model_name > model_title > current_model
         for candidate in [model_name, model_title, current_model]:
             if candidate:
                 return candidate
-        
+
         return ""
 
     def _get_model_specific_settings(self, model_name: str) -> dict:
@@ -479,7 +479,7 @@ USER MEMORIES:
         """
         if not self.valves.model_specific_settings or not model_name:
             return {}
-        
+
         try:
             settings_dict = json.loads(self.valves.model_specific_settings)
             return settings_dict.get(model_name, {})
@@ -495,15 +495,15 @@ USER MEMORIES:
         """
         # Get current model name
         current_model_name = self._get_current_model_name(body)
-        
+
         # Get model-specific settings
         model_settings = self._get_model_specific_settings(current_model_name)
-        
+
         # Start with global/user settings as fallback
         api_url = self.user_valves.openai_api_url or self.valves.openai_api_url
         model = self.user_valves.model or self.valves.model
         api_key = self.user_valves.api_key or self.valves.api_key
-        
+
         # Override with model-specific settings if available
         if model_settings:
             api_url = model_settings.get("openai_api_url", api_url)
@@ -512,7 +512,7 @@ USER MEMORIES:
             print(f"Using model-specific settings for '{current_model_name}': url={api_url}, model={model}")
         else:
             print(f"Using global settings for model '{current_model_name}' (no specific settings found)")
-        
+
         return api_url, model, api_key
 
     async def outlet(
@@ -561,17 +561,33 @@ USER MEMORIES:
                     except Exception as e:
                         print(f"Error stringifying messages: {e}")
                 prompt_string = "\n".join(stringified_messages)
-            memories = await self.identify_memories(prompt_string, body)
+            try:
+                memories = await self.identify_memories(prompt_string, body)
+            except Exception as e:
+                # Show error notification for memory identification failures
+                error_msg = str(e)
+                await __event_emitter__(
+                    {
+                        "type": "notification",
+                        "data": {
+                            "type": "error",
+                            "content": f"Memory identification failed: {error_msg}",
+                        },
+                    }
+                )
+                print(f"MEMORY ERROR: Memory identification failed: {error_msg}")
+                return body
+
+            memories = memories
             if (
                 memories.startswith("[")
                 and memories.endswith("]")
                 and len(memories) != 2
             ):
-                result = await self.process_memories(memories, user, body)
-
-                # Get user valves for status message
-                if self.user_valves.show_status:
-                    if result:
+                try:
+                    result = await self.process_memories(memories, user, body)
+                    # Only show success notification if user wants status updates
+                    if self.user_valves.show_status and result:
                         # Status message
                         await __event_emitter__(
                             {
@@ -619,19 +635,19 @@ USER MEMORIES:
                                         },
                                     }
                                 )
-                    else:
-                        # Show error notification
-                        error_msg = str(result) if result else "Unknown error occurred"
-                        await __event_emitter__(
-                            {
-                                "type": "notification",
-                                "data": {
-                                    "type": "error",
-                                    "content": f"Memory operation failed: {error_msg}",
-                                },
-                            }
-                        )
-                        print(f"Memory operation failed: {error_msg}")
+                except Exception as e:
+                    # Always show error notifications regardless of user settings
+                    error_msg = str(e)
+                    await __event_emitter__(
+                        {
+                            "type": "notification",
+                            "data": {
+                                "type": "error",
+                                "content": f"Memory storage failed: {error_msg}",
+                            },
+                        }
+                    )
+                    print(f"MEMORY ERROR: Memory processing failed: {error_msg}")
             else:
                 print("Auto Memory: no new memories identified")
 
@@ -716,19 +732,28 @@ USER MEMORIES:
                 {"role": "user", "content": prompt},
             ],
         }
+
+        # Debug logging for API calls
+        print(f"MEMORY API DEBUG: Making request to {url}")
+        print(f"MEMORY API DEBUG: Using model: {model}")
+        print(f"MEMORY API DEBUG: Request payload: {json.dumps(payload, indent=2)}")
+
         try:
             async with aiohttp.ClientSession() as session:
+                print(f"MEMORY API DEBUG: Sending POST request...")
                 response = await session.post(url, headers=headers, json=payload)
+                print(f"MEMORY API DEBUG: Response status: {response.status}")
                 response.raise_for_status()
                 json_content = await response.json()
+                print(f"MEMORY API DEBUG: Response received successfully")
             return json_content["choices"][0]["message"]["content"]
         except ClientError as e:
             # Fixed error handling
-            error_msg = str(
-                e
-            )  # Convert the error to string instead of trying to access .response
+            error_msg = str(e)
+            print(f"MEMORY API ERROR: HTTP error: {error_msg}")
             raise Exception(f"Http error: {error_msg}")
         except Exception as e:
+            print(f"MEMORY API ERROR: Unexpected error: {str(e)}")
             raise Exception(f"Unexpected error: {str(e)}")
 
     async def process_memories(
@@ -831,21 +856,21 @@ USER MEMORIES:
         try:
             # Parse the consolidated memories first
             memory_list = ast.literal_eval(consolidated_memories)
-            
+
             # Only proceed with deletion/addition if consolidation actually happened
             original_facts = [item["fact"] for item in fact_list]
-            
+
             # Check if consolidation actually changed anything
             if len(memory_list) < len(original_facts):
                 # Consolidation happened - some memories were merged/removed
                 print(f"Consolidation detected: {len(original_facts)} -> {len(memory_list)} memories")
-                
+
                 # Delete the old related memories
                 if len(filtered_data) > 0:
                     for id in [item["id"] for item in filtered_data]:
                         await delete_memory_by_id(id, user)
                         print(f"Deleted old memory: {id}")
-                        
+
                 # Add the new consolidated memories
                 for item in memory_list:
                     await add_memory(

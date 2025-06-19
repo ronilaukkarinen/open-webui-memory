@@ -3,13 +3,14 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.2
+version: 3.0.3
 required_open_webui_version: >= 0.5.0
 """
 
 import ast
 import json
 import time
+from datetime import datetime
 from typing import Optional, Callable, Awaitable, Any
 
 import aiohttp
@@ -334,19 +335,49 @@ class Filter:
         return body
 
     async def get_all_memories(self, user) -> list:
-        """Retrieve ALL memories for the user without any filtering."""
+        """Retrieve ALL memories for the user with timestamps for context."""
         try:
             # Get all memories for the user
             memories_result = await get_memories(user=user)
 
+            memories_with_time = []
             if memories_result and hasattr(memories_result, 'data'):
-                memories = [memory.content for memory in memories_result.data]
-                print(f"Retrieved {len(memories)} memories for user")
-                return memories
+                for memory in memories_result.data:
+                    # Format timestamp as human-readable date
+                    created_at = getattr(memory, 'created_at', time.time())
+                    if isinstance(created_at, (int, float)):
+                        formatted_time = datetime.fromtimestamp(created_at).strftime("%Y-%m-%d %H:%M")
+                    else:
+                        # Handle string timestamps or other formats
+                        try:
+                            formatted_time = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).strftime("%Y-%m-%d %H:%M")
+                        except:
+                            formatted_time = str(created_at)[:16]  # Fallback
+
+                    memory_with_time = f"{memory.content} (on {formatted_time})"
+                    memories_with_time.append(memory_with_time)
+
+                print(f"Retrieved {len(memories_with_time)} memories for user")
+                return memories_with_time
             elif isinstance(memories_result, list):
-                memories = [memory.content for memory in memories_result if hasattr(memory, 'content')]
-                print(f"Retrieved {len(memories)} memories for user")
-                return memories
+                for memory in memories_result:
+                    if hasattr(memory, 'content'):
+                        # Format timestamp as human-readable date
+                        created_at = getattr(memory, 'created_at', time.time())
+                        if isinstance(created_at, (int, float)):
+                            formatted_time = datetime.fromtimestamp(created_at).strftime("%Y-%m-%d %H:%M")
+                        else:
+                            # Handle string timestamps or other formats
+                            try:
+                                formatted_time = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).strftime("%Y-%m-%d %H:%M")
+                            except:
+                                formatted_time = str(created_at)[:16]  # Fallback
+
+                        memory_with_time = f"{memory.content} (on {formatted_time})"
+                        memories_with_time.append(memory_with_time)
+
+                print(f"Retrieved {len(memories_with_time)} memories for user")
+                return memories_with_time
             return []
         except Exception as e:
             print(f"Error getting memories: {e}")

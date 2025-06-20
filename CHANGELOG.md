@@ -1,3 +1,7 @@
+### 3.0.5: 2025-06-21
+
+* Ensure memory gets saved
+
 ### 3.0.4: 2025-06-20
 
 * Fix memory storing for local models

@@ -1,6 +1,7 @@
 ### 3.0.6: 2025-06-24
 
 * Always save the memory in English for consistency
+* Make sure no markdown code blocks are interfering the memory output
 
 ### 3.0.5: 2025-06-21
 

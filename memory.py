@@ -62,9 +62,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - This replaces the older statement about loving oranges.
 
 **Correct Output**
-```
 ["User hates oranges"]
-```
 
 **Example 2 - 2 messages**
 -2. user: ```I work as a junior data analyst. Please remember that my big presentation is on March 15.```
@@ -74,9 +72,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - The user provides two new pieces of information: their profession and the date of their presentation.
 
 **Correct Output**
-```
 ["User works as a junior data analyst", "User has a big presentation on March 15"]
-```
 
 **Example 3 - 5 messages**
 -5. assistant: ```Nutella is amazing! 😍```
@@ -91,9 +87,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - The remaining message (-5) is irrelevant.
 
 **Correct Output**
-```
 ["User's TV they bought a week ago broke down today"]
-```
 
 **Example 4 - 3 messages**
 -3. assistant: ```As an AI assistant, I can perform extremely complex calculations in seconds.```
@@ -105,9 +99,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - The other messages (-3, -1) are not relevant as they're not about the User.
 
 **Correct Output**
-```
 []
-```
 
 **Example 5 - Simple Preference**
 -2. user: ```I like berries```
@@ -119,9 +111,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - Personal preferences like food likes/dislikes are important to capture.
 
 **Correct Output**
-```
 ["User likes berries"]
-```
 
 **Example 6 - Memory Summary Request**
 -2. user: ```What do you know about me?```
@@ -133,9 +123,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - This is NOT new information about the user - it's just a summary of existing knowledge.
 
 **Correct Output**
-```
-[]
-```\
+[]\
 """
 
 CONSOLIDATE_MEMORIES_PROMPT = """You are maintaining a set of "Memories" for a user, similar to journal entries. Each memory has:
@@ -653,6 +641,32 @@ USER MEMORIES:
             if memories.startswith("```") and memories.endswith("```"):
                 memories = memories[3:-3].strip()
                 print("MEMORY DEBUG: Cleaned markdown code blocks from response")
+            
+            # Additional cleanup for code blocks that might contain language tags
+            if memories.startswith("```python") and memories.endswith("```"):
+                memories = memories[9:-3].strip()
+                print("MEMORY DEBUG: Cleaned python code blocks from response")
+            elif memories.startswith("```json") and memories.endswith("```"):
+                memories = memories[7:-3].strip()
+                print("MEMORY DEBUG: Cleaned json code blocks from response")
+            
+            # Strip any remaining code block markers
+            memories = memories.replace("```", "").strip()
+            
+            # Remove common prefixes that might be added by AI
+            prefixes_to_remove = [
+                "**Correct Output**",
+                "**Output**",
+                "**Response**",
+                "**Result**",
+                "Output:",
+                "Response:",
+                "Result:"
+            ]
+            for prefix in prefixes_to_remove:
+                if memories.startswith(prefix):
+                    memories = memories[len(prefix):].strip()
+                    print(f"MEMORY DEBUG: Removed prefix '{prefix}' from response")
 
             if (
                 memories.startswith("[")

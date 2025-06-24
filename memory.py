@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.5
+version: 3.0.6
 required_open_webui_version: >= 0.5.0
 """
 
@@ -44,7 +44,8 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 4b. CRITICAL: Do NOT extract memories from Assistant responses that are clearly just summarizing or listing existing knowledge about the user. Only extract from genuine new information provided by the User.
 5. If the User explicitly requests to "remember" or note down something in their latest message (-2), always include it.
 6. Avoid storing short-term situational details or temporary actions (e.g. user: "I'm reading this question right now", user: "I just woke up!", user: "Oh yeah, I saw that on TV the other day"). However, DO capture personal preferences, interests, opinions, and persistent facts about the user (e.g. "I like berries", "I enjoy hiking", "I prefer tea over coffee", "I work in marketing").
-7. Return your result as a Python list of strings, **each string representing a separate Memory**. If no relevant info is found, **only** return an empty list (`[]`). No explanations, just the list. Do NOT wrap your response in markdown code blocks or any other formatting - return the raw Python list only.
+7. If the user writes in another language, translate the memory content to English while preserving the original meaning.
+8. Return your result as a Python list of strings, **each string representing a separate Memory**. If no relevant info is found, **only** return an empty list (`[]`). No explanations, just the list. Do NOT wrap your response in markdown code blocks or any other formatting - return the raw Python list only.
 
 ---
 

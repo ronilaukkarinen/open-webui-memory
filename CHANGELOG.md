@@ -1,3 +1,7 @@
+### 3.0.6: 2025-06-24
+
+* Always save the memory in English for consistency
+
 ### 3.0.5: 2025-06-21
 
 * Ensure memory gets saved

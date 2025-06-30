@@ -1,3 +1,7 @@
+### 3.0.7: 2025-06-30
+
+* Fixes to memory prompt
+
 ### 3.0.6: 2025-06-24
 
 * Always save the memory in English for consistency

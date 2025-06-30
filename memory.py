@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.6
+version: 3.0.7
 required_open_webui_version: >= 0.5.0
 """
 
@@ -36,14 +36,15 @@ You are helping maintain a collection of the User's Memories—like individual "
 You will be provided with the last 2 or more messages from a conversation. Your job is to decide which details within the last User message (-2) are worth saving long-term as Memory entries.
 
 ** Key Instructions **
-1. Identify new or changed personal details from the User's **latest** message (-2) only. Older user messages may appear for context; do not re-store older facts unless explicitly repeated or modified in the last User message (-2).
-1b. IMPORTANT: If the User's message (-2) is asking about existing memories (e.g., "What do you know about me?", "What are my preferences?", "Tell me about myself"), and the Assistant's response (-1) is just summarizing existing information, return an empty list `[]`. Do NOT store the Assistant's summary as new memories.
-2. If the User's newest message contradicts an older statement (e.g., message -4 says "I love oranges" vs. message -2 says "I hate oranges"), extract only the updated info ("User hates oranges").
-3. Think of each Memory as a single "fact" or statement. Never combine multiple facts into one Memory. If the User mentions multiple distinct items, break them into separate entries.
-4. Your goal is to capture anything that might be valuable for the "assistant" to remember about the User, to personalize and enrich future interactions.
-4b. CRITICAL: Do NOT extract memories from Assistant responses that are clearly just summarizing or listing existing knowledge about the user. Only extract from genuine new information provided by the User.
-5. If the User explicitly requests to "remember" or note down something in their latest message (-2), always include it.
+1. **HIGHEST PRIORITY - EXPLICIT REMEMBER REQUESTS**: If the User explicitly requests to "remember" or note down something in their latest message (-2), ALWAYS include it regardless of any other rules. This overrides all filtering rules below.
+2. Identify new or changed personal details from the User's **latest** message (-2) only. Older user messages may appear for context; do not re-store older facts unless explicitly repeated or modified in the last User message (-2).
+2b. IMPORTANT: If the User's message (-2) is asking about existing memories (e.g., "What do you know about me?", "What are my preferences?", "Tell me about myself"), and the Assistant's response (-1) is just summarizing existing information, return an empty list `[]`. Do NOT store the Assistant's summary as new memories.
+3. If the User's newest message contradicts an older statement (e.g., message -4 says "I love oranges" vs. message -2 says "I hate oranges"), extract only the updated info ("User hates oranges").
+4. Think of each Memory as a single "fact" or statement. Never combine multiple facts into one Memory. If the User mentions multiple distinct items, break them into separate entries.
+5. Your goal is to capture anything that might be valuable for the "assistant" to remember about the User, to personalize and enrich future interactions.
+5b. CRITICAL: Do NOT extract memories from Assistant responses that are clearly just summarizing or listing existing knowledge about the user. Only extract from genuine new information provided by the User.
 6. Avoid storing short-term situational details or temporary actions (e.g. user: "I'm reading this question right now", user: "I just woke up!", user: "Oh yeah, I saw that on TV the other day"). However, DO capture personal preferences, interests, opinions, and persistent facts about the user (e.g. "I like berries", "I enjoy hiking", "I prefer tea over coffee", "I work in marketing").
+6b. CRITICAL: Do NOT store memories that only describe what the user is asking for help with in the current conversation. These are temporary interactions, not personal facts. Examples of what NOT to store: "User asked about configuration", "User is asking how to set up X", "User wants help with debugging", "User requested information about Y". However, DO store if they mention personal context like "User is learning piano" or "User is working on a React project".
 7. If the user writes in another language, translate the memory content to English while preserving the original meaning.
 8. Return your result as a Python list of strings, **each string representing a separate Memory**. If no relevant info is found, **only** return an empty list (`[]`). No explanations, just the list. Do NOT wrap your response in markdown code blocks or any other formatting - return the raw Python list only.
 

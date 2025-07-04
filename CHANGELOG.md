@@ -1,3 +1,8 @@
+### 3.0.8: 2025-07-04
+
+* Remove legacy prompt
+* Fix AI saving duplicate memories and not recognizing there are already memories about the same topic
+
 ### 3.0.7: 2025-06-30
 
 * Fixes to memory prompt

@@ -1,3 +1,7 @@
+### 3.0.9: 2025-07-04
+
+* Re-introduce fix for re-adding the same memories
+
 ### 3.0.8: 2025-07-04
 
 * Remove legacy prompt

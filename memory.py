@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.8
+version: 3.0.9
 required_open_webui_version: >= 0.5.0
 """
 
@@ -37,7 +37,7 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 
 ** Key Instructions **
 1. **HIGHEST PRIORITY - EXPLICIT REMEMBER REQUESTS**: If the User explicitly requests to "remember" or note down something in their latest message (-2), ALWAYS include it regardless of any other rules. This overrides all filtering rules below.
-2. Identify new or changed personal details from the User's **latest** message (-2) only. Older user messages may appear for context; do not re-store older facts unless explicitly repeated or modified in the last User message (-2).
+2. **CRITICAL - ONLY PROCESS MESSAGE (-2)**: Identify new or changed personal details from the User's **latest** message (-2) ONLY. You MUST completely IGNORE all older user messages (-3, -4, -5, etc.) even if they contain interesting information. Older user messages are provided ONLY for context to understand what the user is referring to in their latest message (-2). Do NOT extract memories from any message other than (-2).
 2b. IMPORTANT: If the User's message (-2) is asking about existing memories (e.g., "What do you know about me?", "What are my preferences?", "Tell me about myself"), and the Assistant's response (-1) is just summarizing existing information, return an empty list `[]`. Do NOT store the Assistant's summary as new memories.
 3. If the User's newest message contradicts an older statement (e.g., message -4 says "I love oranges" vs. message -2 says "I hate oranges"), extract only the updated info ("User hates oranges").
 4. Think of each Memory as a single "fact" or statement. Never combine multiple facts into one Memory. If the User mentions multiple distinct items, break them into separate entries.
@@ -137,7 +137,22 @@ You will be provided with the last 2 or more messages from a conversation. Your 
 - We should NOT store "User is having trouble with Python code" or "User asked for debugging help".
 
 **Correct Output**
-[]\
+[]
+
+**Example 8 - IGNORING OLDER MESSAGES (CRITICAL)**
+-4. user: ```I love The Midnight band and I make synthwave music under the alias Streetgazer. I've also watched over 5000 movies.```
+-3. assistant: ```That's amazing! The Midnight is fantastic, and your movie count is impressive.```
+-2. user: ```Have you seen Stranger Things? It's one of my favorite shows.```
+-1. assistant: ```Yes! Stranger Things is excellent. Given your love for synthwave and sci-fi, it's perfect for you.```
+
+**Analysis**
+- Message (-4) contains lots of valuable information about the user's music interests, alias, and movie count.
+- However, we MUST ONLY process message (-2), which only mentions Stranger Things being a favorite show.
+- We MUST IGNORE all the information in message (-4) even though it's valuable personal information.
+- Only extract from the latest user message (-2).
+
+**Correct Output**
+["User has seen Stranger Things, which is one of their favorite shows"]\
 """
 
 CONSOLIDATE_MEMORIES_PROMPT = """You are maintaining a set of "Memories" for a user, similar to journal entries. Each memory has:
@@ -263,7 +278,7 @@ class Filter:
             description="Number of related memories to consider when updating memories",
         )
         related_memories_dist: float = Field(
-            default=0.75,
+            default=0.6,
             description="Distance of memories to consider for updates. Smaller number will be more closely related.",
         )
         save_assistant_response: bool = Field(
@@ -834,17 +849,17 @@ USER MEMORIES:
         try:
             memory_list = ast.literal_eval(memories)
             print(f"Auto Memory: identified {len(memory_list)} new memories")
-            
+
             # Pre-process to remove exact duplicates within the same batch
             unique_memories = []
             for memory in memory_list:
                 memory_lower = memory.lower().strip()
                 if not any(existing.lower().strip() == memory_lower for existing in unique_memories):
                     unique_memories.append(memory)
-            
+
             if len(unique_memories) < len(memory_list):
                 print(f"Auto Memory: removed {len(memory_list) - len(unique_memories)} exact duplicates from batch")
-            
+
             for memory in unique_memories:
                 await self.store_memory(memory, user, body)
             return True
@@ -867,12 +882,15 @@ USER MEMORIES:
                 user=user,
             )
             if related_memories is None:
-                related_memories = [
-                    ["ids", [["123"]]],
-                    ["documents", [["blank"]]],
-                    ["metadatas", [[{"created_at": 999}]]],
-                    ["distances", [[100]]],
-                ]
+                print(f"Auto Memory: WARNING - Vector search failed for '{memory}'. Storing without duplicate detection.")
+                # Store the memory directly without duplicate detection
+                await add_memory(
+                    request=Request(scope={"type": "http", "app": webui_app}),
+                    form_data=AddMemoryForm(content=memory),
+                    user=user,
+                )
+                print(f"Added memory without duplicate detection: {memory}")
+                return True
         except Exception as e:
             return f"Unable to query related memories: {e}"
         try:
@@ -907,9 +925,14 @@ USER MEMORIES:
                 for item in structured_data
                 if item["distance"] < self.valves.related_memories_dist
             ]
-            # Limit to relevant data to minimize tokens
-            print(f"All related memories: {structured_data}")
-            print(f"Filtered data (threshold {self.valves.related_memories_dist}): {filtered_data}")
+
+            # Debug logging to understand why duplicates aren't being caught
+            if filtered_data:
+                print(f"Auto Memory: Found {len(filtered_data)} related memories for '{memory}'")
+                for item in filtered_data:
+                    print(f"  - Distance: {item['distance']:.4f}, Memory: '{item['fact']}'")
+            else:
+                print(f"Auto Memory: No related memories found for '{memory}' (threshold: {self.valves.related_memories_dist})")
             fact_list = [
                 {"fact": item["fact"], "created_at": item["metadata"]["created_at"]}
                 for item in filtered_data

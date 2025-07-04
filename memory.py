@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.0.9
+version: 3.1.0
 required_open_webui_version: >= 0.5.0
 """
 
@@ -670,7 +670,7 @@ USER MEMORIES:
                 and len(memories) != 2
             ):
                 try:
-                    result = await self.process_memories(memories, user, body)
+                    result = await self.process_memories(memories, user, body, __user__)
                     # Only show success notification if user wants status updates
                     if self.user_valves.show_status and result:
                         # Status message
@@ -844,6 +844,7 @@ USER MEMORIES:
         memories: str,
         user: UserModel,
         body: dict = None,
+        __user__: Optional[dict] = None,
     ) -> bool:
         """Given a list of memories as a string, go through each memory, check for duplicates, then store the remaining memories."""
         try:
@@ -860,20 +861,145 @@ USER MEMORIES:
             if len(unique_memories) < len(memory_list):
                 print(f"Auto Memory: removed {len(memory_list) - len(unique_memories)} exact duplicates from batch")
 
+            # Instead of processing each memory individually, consolidate the entire batch
+            # This handles cases where multiple memories in the same conversation contradict each other
+            if len(unique_memories) > 1:
+                # Check if any memories in this batch contradict each other
+                try:
+                    batch_consolidation_prompt = f"""
+You have {len(unique_memories)} new memories from the same conversation that need to be consolidated:
+
+{json.dumps([{"fact": memory, "created_at": time.time()} for memory in unique_memories])}
+
+If any of these memories contradict each other (like "loves X" then "hates X"), keep only the LAST one mentioned (most recent in the conversation). If they're all compatible, keep them all.
+
+Return the final list as a Python list of strings - just the memory text, no extra formatting.
+"""
+                    
+                    if __user__:
+                        self.user_valves = __user__.get("valves", self.UserValves())
+                    
+                    batch_result = await self.query_openai_api(
+                        system_prompt="You are consolidating memories from a single conversation. Keep the most recent when there are contradictions.",
+                        prompt=batch_consolidation_prompt,
+                        body=body,
+                    )
+                    
+                    batch_memories = ast.literal_eval(batch_result.strip())
+                    print(f"Auto Memory: Batch consolidation reduced {len(unique_memories)} memories to {len(batch_memories)}")
+                    
+                    # Now process the consolidated batch
+                    for memory in batch_memories:
+                        await self.store_memory(memory, user, body, __user__)
+                    return True
+                    
+                except Exception as e:
+                    print(f"Auto Memory: Batch consolidation failed: {e}")
+                    # Fall back to individual processing
+            
+            # Process individually if batch consolidation failed or only one memory
             for memory in unique_memories:
-                await self.store_memory(memory, user, body)
+                await self.store_memory(memory, user, body, __user__)
             return True
         except Exception as e:
             return e
+
+    async def find_similar_memories_text(self, memory: str, user) -> list:
+        """Find similar memories using text-based similarity as fallback when vector search fails."""
+        try:
+            print(f"Auto Memory: Starting text-based similarity search for '{memory}'")
+            # Get all existing memories
+            memories_result = await get_memories(user=user)
+            print(f"Auto Memory: get_memories returned type: {type(memories_result)}")
+            print(f"Auto Memory: get_memories result: {memories_result}")
+            
+            if not memories_result:
+                print(f"Auto Memory: No existing memories found")
+                return []
+            
+            # Handle different return formats
+            if hasattr(memories_result, 'data'):
+                existing_memories = memories_result.data
+            elif isinstance(memories_result, list):
+                existing_memories = memories_result
+            else:
+                print(f"Auto Memory: Invalid result format from get_memories")
+                return []
+            
+            print(f"Auto Memory: Found {len(existing_memories)} existing memories to compare against")
+            similar_memories = []
+            memory_lower = memory.lower().strip()
+            
+            for existing_memory in existing_memories:
+                existing_content = getattr(existing_memory, 'content', '').lower().strip()
+                
+                # Calculate simple text similarity
+                similarity = self.calculate_text_similarity(memory_lower, existing_content)
+                
+                # Use the same distance threshold (convert similarity to distance)
+                distance = 1.0 - similarity
+                print(f"Auto Memory: Comparing '{memory}' vs '{existing_content[:50]}...' - similarity: {similarity:.3f}, distance: {distance:.3f}")
+                
+                if distance < self.valves.related_memories_dist:
+                    similar_memories.append({
+                        'id': getattr(existing_memory, 'id', ''),
+                        'fact': getattr(existing_memory, 'content', ''),
+                        'metadata': {'created_at': getattr(existing_memory, 'created_at', time.time())},
+                        'distance': distance
+                    })
+                    print(f"Auto Memory: Added similar memory (distance: {distance:.3f}): '{existing_content[:50]}...'")
+            
+            # Sort by distance (most similar first) and limit results
+            similar_memories.sort(key=lambda x: x['distance'])
+            final_results = similar_memories[:self.valves.related_memories_n]
+            print(f"Auto Memory: Text-based search returning {len(final_results)} similar memories")
+            return final_results
+            
+        except Exception as e:
+            print(f"Auto Memory: Error in text-based similarity search: {e}")
+            import traceback
+            print(f"Auto Memory: Traceback: {traceback.format_exc()}")
+            return None
+
+    def calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """Calculate simple text similarity between two strings."""
+        if not text1 or not text2:
+            return 0.0
+        
+        # Exact match
+        if text1 == text2:
+            return 1.0
+        
+        # Check if one text contains the other
+        if text1 in text2 or text2 in text1:
+            return 0.8
+        
+        # Simple word overlap similarity
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0
 
     async def store_memory(
         self,
         memory: str,
         user,
         body: dict = None,
+        __user__: Optional[dict] = None,
     ) -> str:
         """Given a memory, retrieve related memories. Update conflicting memories and consolidate memories as needed. Then store remaining memories."""
+        # Initialize user_valves if __user__ is provided
+        if __user__:
+            self.user_valves = __user__.get("valves", self.UserValves())
+        
         try:
+            # Try vector search first, fall back to text-based search if it fails
             related_memories = await query_memory(
                 request=Request(scope={"type": "http", "app": webui_app}),
                 form_data=QueryMemoryForm(
@@ -881,26 +1007,50 @@ USER MEMORIES:
                 ),
                 user=user,
             )
+            
             if related_memories is None:
-                print(f"Auto Memory: WARNING - Vector search failed for '{memory}'. Storing without duplicate detection.")
-                # Store the memory directly without duplicate detection
-                await add_memory(
-                    request=Request(scope={"type": "http", "app": webui_app}),
-                    form_data=AddMemoryForm(content=memory),
-                    user=user,
-                )
-                print(f"Added memory without duplicate detection: {memory}")
-                return True
+                print(f"Auto Memory: Vector search failed, using text-based similarity for '{memory}'")
+                # Use text-based similarity as fallback
+                related_memories = await self.find_similar_memories_text(memory, user)
+                if related_memories is None:
+                    print(f"Auto Memory: Text-based search also failed for '{memory}'. Storing without duplicate detection.")
+                    await add_memory(
+                        request=Request(scope={"type": "http", "app": webui_app}),
+                        form_data=AddMemoryForm(content=memory),
+                        user=user,
+                    )
+                    print(f"Added memory without duplicate detection: {memory}")
+                    return True
         except Exception as e:
             return f"Unable to query related memories: {e}"
         try:
-            # Handle both SearchResult object and old list format
-            if hasattr(related_memories, 'ids') and hasattr(related_memories, 'documents'):
-                # New SearchResult format
+            # Handle different return formats: vector search results vs text-based results
+            if isinstance(related_memories, list):
+                if len(related_memories) > 0 and isinstance(related_memories[0], dict):
+                    # Text-based search results (already in structured format)
+                    structured_data = related_memories
+                    print(f"Auto Memory: Found {len(related_memories)} related memories using text-based similarity")
+                else:
+                    # Empty list from text-based search - no similar memories found
+                    structured_data = []
+                    print(f"Auto Memory: No similar memories found using text-based similarity for '{memory}'")
+            elif hasattr(related_memories, 'ids') and hasattr(related_memories, 'documents'):
+                # Vector search SearchResult format
                 ids = related_memories.ids[0] if related_memories.ids else []
                 documents = related_memories.documents[0] if related_memories.documents else []
                 metadatas = related_memories.metadatas[0] if related_memories.metadatas else []
                 distances = related_memories.distances[0] if related_memories.distances else []
+                
+                # Combine each document and its associated data into a list of dictionaries
+                structured_data = [
+                    {
+                        "id": ids[i],
+                        "fact": documents[i],
+                        "metadata": metadatas[i],
+                        "distance": distances[i],
+                    }
+                    for i in range(len(documents))
+                ]
             else:
                 # Old list format fallback
                 related_list = [obj for obj in related_memories]
@@ -908,17 +1058,17 @@ USER MEMORIES:
                 documents = related_list[1][1][0]
                 metadatas = related_list[2][1][0]
                 distances = related_list[3][1][0]
-
-            # Combine each document and its associated data into a list of dictionaries
-            structured_data = [
-                {
-                    "id": ids[i],
-                    "fact": documents[i],
-                    "metadata": metadatas[i],
-                    "distance": distances[i],
-                }
-                for i in range(len(documents))
-            ]
+                
+                # Combine each document and its associated data into a list of dictionaries
+                structured_data = [
+                    {
+                        "id": ids[i],
+                        "fact": documents[i],
+                        "metadata": metadatas[i],
+                        "distance": distances[i],
+                    }
+                    for i in range(len(documents))
+                ]
             # Filter for distance within threshhold
             filtered_data = [
                 item
@@ -943,14 +1093,90 @@ USER MEMORIES:
             return f"Unable to restructure and filter related memories: {e}"
         # Consolidate conflicts or overlaps
         try:
+            print(f"Auto Memory: Starting consolidation API call for memory: '{memory}'")
+            print(f"Auto Memory: Consolidation input fact_list: {fact_list}")
+            print(f"Auto Memory: API URL: {self.user_valves.openai_api_url if hasattr(self, 'user_valves') and self.user_valves.openai_api_url else self.valves.openai_api_url}")
+            print(f"Auto Memory: Model: {self.user_valves.model if hasattr(self, 'user_valves') and self.user_valves.model else self.valves.model}")
+            print(f"Auto Memory: API Key configured: {bool(self.user_valves.api_key if hasattr(self, 'user_valves') and self.user_valves.api_key else self.valves.api_key)}")
+            
             consolidated_memories = await self.query_openai_api(
                 system_prompt=CONSOLIDATE_MEMORIES_PROMPT,
                 prompt=json.dumps(fact_list),
                 body=body,
             )
-            print(f"Consolidated memories response: {consolidated_memories}")
+            print(f"Auto Memory: Consolidation API call successful. Response: {consolidated_memories}")
         except Exception as e:
-            return f"Unable to consolidate related memories: {e}"
+            print(f"Auto Memory: Consolidation API call failed with error: {e}")
+            import traceback
+            print(f"Auto Memory: Consolidation traceback: {traceback.format_exc()}")
+            # If consolidation fails, try basic duplicate handling
+            if len(filtered_data) > 0:
+                print(f"Auto Memory: Consolidation failed but found {len(filtered_data)} similar memories. Performing basic duplicate handling.")
+                # Check if this is a simple duplicate (very high similarity)
+                for item in filtered_data:
+                    if item["distance"] < 0.1:  # Very similar - likely duplicate
+                        print(f"Auto Memory: Found very similar memory (distance: {item['distance']:.3f}). Skipping storage to avoid duplicate.")
+                        return "Memory already exists"
+                
+                # Check if this contradicts existing memories about the same topic
+                # Use AI to detect contradictions when consolidation API fails
+                if len(filtered_data) > 0:
+                    try:
+                        # Create a simple contradiction check prompt
+                        contradiction_prompt = f"""
+You are checking if two memories about the same person contradict each other.
+
+New memory: "{memory}"
+Existing similar memories: {[item["fact"] for item in filtered_data]}
+
+Do any of these memories directly contradict the new memory? A contradiction means they cannot both be true at the same time (like "loves X" vs "hates X", or "lives in A" vs "lives in B").
+
+Return only a JSON object with this format:
+{{"has_contradiction": true/false, "contradicting_memory": "exact text of contradicting memory or null"}}
+
+Examples:
+- "User loves pizza" vs "User hates pizza" = contradiction
+- "User lives in New York" vs "User lives in Boston" = contradiction  
+- "User likes apples" vs "User likes oranges" = NOT a contradiction (can like both)
+- "User is 25 years old" vs "User is 30 years old" = contradiction
+"""
+                        
+                        contradiction_result = await self.query_openai_api(
+                            system_prompt="You are a precise contradiction detector. Return only valid JSON.",
+                            prompt=contradiction_prompt,
+                            body=body,
+                        )
+                        
+                        result = json.loads(contradiction_result.strip())
+                        
+                        if result.get("has_contradiction") and result.get("contradicting_memory"):
+                            # Find and delete the contradicting memory
+                            for item in filtered_data:
+                                if item["fact"] == result["contradicting_memory"]:
+                                    print(f"Auto Memory: AI detected contradiction. Deleting old memory: '{item['fact']}'")
+                                    await delete_memory_by_id(item["id"], user)
+                                    break
+                        elif result.get("has_contradiction"):
+                            # If contradiction detected but no specific memory identified, 
+                            # delete all similar memories (they're likely all conflicting)
+                            print(f"Auto Memory: AI detected general contradiction. Deleting all similar memories.")
+                            for item in filtered_data:
+                                print(f"Auto Memory: Deleting conflicting memory: '{item['fact']}'")
+                                await delete_memory_by_id(item["id"], user)
+                                    
+                    except Exception as e:
+                        print(f"Auto Memory: Contradiction detection failed: {e}")
+                        # Fall back to storing without contradiction detection
+            
+            # Store the new memory
+            print(f"Auto Memory: Storing memory without consolidation: '{memory}'")
+            await add_memory(
+                request=Request(scope={"type": "http", "app": webui_app}),
+                form_data=AddMemoryForm(content=memory),
+                user=user,
+            )
+            print(f"Auto Memory: Successfully stored memory: '{memory}'")
+            return True
         try:
             # Parse the consolidated memories first
             memory_list = ast.literal_eval(consolidated_memories)

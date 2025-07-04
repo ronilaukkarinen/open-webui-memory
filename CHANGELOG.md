@@ -1,3 +1,9 @@
+### 3.1.0: 2025-07-04
+
+* Fix broken vector search by implementing text-based similarity fallback
+* Replace failing `query_memory` calls with reliable text-based duplicate detection
+* Improve memory deduplication when ChromaDB/vector search is not working properly
+
 ### 3.0.9: 2025-07-04
 
 * Re-introduce fix for re-adding the same memories

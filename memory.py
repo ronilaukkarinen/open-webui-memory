@@ -263,7 +263,7 @@ class Filter:
             description="Number of related memories to consider when updating memories",
         )
         related_memories_dist: float = Field(
-            default=0.85,
+            default=0.75,
             description="Distance of memories to consider for updates. Smaller number will be more closely related.",
         )
         save_assistant_response: bool = Field(
@@ -834,7 +834,18 @@ USER MEMORIES:
         try:
             memory_list = ast.literal_eval(memories)
             print(f"Auto Memory: identified {len(memory_list)} new memories")
+            
+            # Pre-process to remove exact duplicates within the same batch
+            unique_memories = []
             for memory in memory_list:
+                memory_lower = memory.lower().strip()
+                if not any(existing.lower().strip() == memory_lower for existing in unique_memories):
+                    unique_memories.append(memory)
+            
+            if len(unique_memories) < len(memory_list):
+                print(f"Auto Memory: removed {len(memory_list) - len(unique_memories)} exact duplicates from batch")
+            
+            for memory in unique_memories:
                 await self.store_memory(memory, user, body)
             return True
         except Exception as e:

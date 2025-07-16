@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.1.0
+version: 3.2.0
 required_open_webui_version: >= 0.5.0
 """
 
@@ -297,6 +297,10 @@ class Filter:
             default='{"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "qwen2.5:7b"}}',
             description='JSON object with per-model API settings. Format: {"character_name": {"openai_api_url": "http://localhost:11434", "api_key": "ollama", "model": "qwen2.5:7b"}}.'
         )
+        disable_for_image_generation: bool = Field(
+            default=True,
+            description="Disable memory injection for image generation requests to prevent interference with image prompts"
+        )
 
     class UserValves(BaseModel):
         show_status: bool = Field(
@@ -335,6 +339,27 @@ class Filter:
             if self._should_exclude_model(body, self.valves.excluded_models):
                 print("MEMORY FILTER: Skipping memory processing for excluded model")
                 return body
+
+        # Check if image generation is disabled and this is an image generation request
+        if self.valves.disable_for_image_generation:
+            if self._is_image_generation_request(body):
+                print("MEMORY FILTER: Skipping memory injection for image generation request")
+                return body
+            else:
+                # Debug logging to help understand request structure
+                print(f"MEMORY DEBUG: Request body keys: {list(body.keys())}")
+                if 'messages' in body and len(body['messages']) > 0:
+                    last_message = body['messages'][-1]
+                    print(f"MEMORY DEBUG: Last message keys: {list(last_message.keys()) if isinstance(last_message, dict) else 'Not a dict'}")
+                    if isinstance(last_message, dict) and 'content' in last_message:
+                        content = last_message['content']
+                        print(f"MEMORY DEBUG: Content type: {type(content)}, Content preview: {str(content)[:100] if isinstance(content, str) else content}")
+                print(f"MEMORY DEBUG: Model: {body.get('model', 'Not found')}")
+                print(f"MEMORY DEBUG: Tools: {body.get('tools', 'Not found')}")
+                print(f"MEMORY DEBUG: Images: {body.get('images', 'Not found')}")
+                print(f"MEMORY DEBUG: Backend: {body.get('backend', 'Not found')}")
+                print(f"MEMORY DEBUG: Response format: {body.get('response_format', 'Not found')}")
+                print(f"MEMORY DEBUG: Image generation: {body.get('image_generation', 'Not found')}")
 
         # Always inject all memories for context
         if __user__:
@@ -432,6 +457,67 @@ USER MEMORIES:
                     else:
                         print(f"Memory context already present, skipping injection")
                     break
+
+    def _is_image_generation_request(self, body: dict) -> bool:
+        """
+        Detect if the current request is for image generation.
+        Based on Open WebUI's official patterns for image generation requests.
+        """
+        if not body:
+            return False
+        
+        # Method 1: Check for image generation endpoint in URL (if available)
+        # This would be checked in the calling context if URL is available
+        
+        # Method 2: Check for image generation specific parameters
+        image_params = ['size', 'n', 'response_format']
+        has_image_params = any(param in body for param in image_params)
+        
+        # Method 3: Check for prompt-only structure (common in image generation)
+        has_prompt_only = 'prompt' in body and len([k for k in body.keys() if k not in ['prompt', 'model']]) <= 2
+        
+        # Method 4: Check metadata flags
+        metadata = body.get('metadata', {})
+        metadata_flags = metadata.get('image_generation') or metadata.get('generate_image')
+        
+        # Method 5: Check features and options
+        features = body.get('features', {})
+        options = body.get('options', {})
+        feature_flags = features.get('image_generation') or options.get('generate_image')
+        
+        # Method 6: Check for direct image generation flags
+        direct_flags = body.get('image_generation', False) or body.get('generate_image', False)
+        
+        # Method 7: Check for image generation models
+        model_check = any(model in body.get("model", "").lower() for model in ["dall-e", "stable-diffusion", "imagen", "midjourney"])
+        
+        # Method 8: Check for ComfyUI or other image generation backends
+        backend_check = body.get("backend") in ["comfyui", "automatic1111", "stable-diffusion"]
+        
+        # Combine all detection methods
+        is_image_request = (
+            has_image_params or
+            (has_prompt_only and 'prompt' in body) or
+            metadata_flags or
+            feature_flags or
+            direct_flags or
+            model_check or
+            backend_check
+        )
+        
+        if is_image_request:
+            detection_methods = []
+            if has_image_params: detection_methods.append("image_params")
+            if has_prompt_only and 'prompt' in body: detection_methods.append("prompt_only")
+            if metadata_flags: detection_methods.append("metadata_flags")
+            if feature_flags: detection_methods.append("feature_flags")
+            if direct_flags: detection_methods.append("direct_flags")
+            if model_check: detection_methods.append("model_check")
+            if backend_check: detection_methods.append("backend_check")
+            
+            print(f"MEMORY FILTER: Detected image generation request via: {', '.join(detection_methods)}")
+            
+        return is_image_request
 
     def _should_exclude_model(self, body: dict, excluded_models: str) -> bool:
         """
@@ -580,6 +666,12 @@ USER MEMORIES:
         if self.valves.excluded_models:
             if self._should_exclude_model(body, self.valves.excluded_models):
                 print("MEMORY FILTER: Skipping memory processing for excluded model")
+                return body
+
+        # Check if image generation is disabled and this is an image generation request
+        if self.valves.disable_for_image_generation:
+            if self._is_image_generation_request(body):
+                print("MEMORY FILTER: Skipping memory processing for image generation request")
                 return body
 
         # Process user message for memories

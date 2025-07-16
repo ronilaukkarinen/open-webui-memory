@@ -1,3 +1,10 @@
+### 3.2.0: 2025-07-16
+
+* Add valve to disable memory function for image generation requests
+* Implement image generation request detection to prevent memory interference with image prompts
+* Add debug logging to help identify Open WebUI image generation patterns
+* Fix issue where memories were being injected into image generation requests causing "unrecognizable mess" images
+
 ### 3.1.0: 2025-07-04
 
 * Fix broken vector search by implementing text-based similarity fallback

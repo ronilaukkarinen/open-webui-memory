@@ -1,4 +1,4 @@
-### 3.2.0: 2025-07-16
+### 3.2.0: 2025-07-17
 
 * Add valve to disable memory function for image generation requests
 * Implement image generation request detection to prevent memory interference with image prompts

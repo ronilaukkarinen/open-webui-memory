@@ -1,3 +1,11 @@
+### 3.2.1: 2025-07-24
+
+* Fix "SyntaxError: The string did not match the expected pattern" notification error
+* Improve AI response parsing with better error handling for malformed list formats
+* Add graceful fallbacks when memory consolidation parsing fails
+* Remove common AI response prefixes that cause parsing issues
+* Enhance debugging for malformed AI responses from custom models
+
 ### 3.2.0: 2025-07-17
 
 * Add valve to disable memory function for image generation requests

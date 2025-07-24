@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.2.0
+version: 3.2.1
 required_open_webui_version: >= 0.5.0
 """
 
@@ -790,7 +790,16 @@ USER MEMORIES:
                         else:
                             # Parse the memories list to create a detailed notification
                             try:
-                                memory_list = ast.literal_eval(memories)
+                                # Safely parse memories for notification counting
+                                memories_cleaned = memories.strip()
+                                
+                                # Remove common AI response prefixes
+                                prefixes_to_remove = ["**Correct Output**", "**Output**", "**Response**", "**Result**", "Output:", "Response:", "Result:"]
+                                for prefix in prefixes_to_remove:
+                                    if memories_cleaned.startswith(prefix):
+                                        memories_cleaned = memories_cleaned[len(prefix):].strip()
+                                
+                                memory_list = ast.literal_eval(memories_cleaned)
                                 memory_count = len(memory_list)
                                 await __event_emitter__(
                                     {
@@ -940,7 +949,16 @@ USER MEMORIES:
     ) -> bool:
         """Given a list of memories as a string, go through each memory, check for duplicates, then store the remaining memories."""
         try:
-            memory_list = ast.literal_eval(memories)
+            # Safely parse the memories string with better error handling
+            memories_cleaned = memories.strip()
+            
+            # Remove common AI response prefixes
+            prefixes_to_remove = ["**Correct Output**", "**Output**", "**Response**", "**Result**", "Output:", "Response:", "Result:"]
+            for prefix in prefixes_to_remove:
+                if memories_cleaned.startswith(prefix):
+                    memories_cleaned = memories_cleaned[len(prefix):].strip()
+            
+            memory_list = ast.literal_eval(memories_cleaned)
             print(f"Auto Memory: identified {len(memory_list)} new memories")
 
             # Pre-process to remove exact duplicates within the same batch
@@ -977,7 +995,16 @@ Return the final list as a Python list of strings - just the memory text, no ext
                         body=body,
                     )
                     
-                    batch_memories = ast.literal_eval(batch_result.strip())
+                    # Safely parse batch consolidation result
+                    batch_result_cleaned = batch_result.strip()
+                    
+                    # Remove common AI response prefixes
+                    prefixes_to_remove = ["**Correct Output**", "**Output**", "**Response**", "**Result**", "Output:", "Response:", "Result:"]
+                    for prefix in prefixes_to_remove:
+                        if batch_result_cleaned.startswith(prefix):
+                            batch_result_cleaned = batch_result_cleaned[len(prefix):].strip()
+                    
+                    batch_memories = ast.literal_eval(batch_result_cleaned)
                     print(f"Auto Memory: Batch consolidation reduced {len(unique_memories)} memories to {len(batch_memories)}")
                     
                     # Now process the consolidated batch
@@ -985,6 +1012,12 @@ Return the final list as a Python list of strings - just the memory text, no ext
                         await self.store_memory(memory, user, body, __user__)
                     return True
                     
+                except (ValueError, SyntaxError) as e:
+                    if "string did not match the expected pattern" in str(e):
+                        print(f"Auto Memory: Batch consolidation AI response parsing failed - malformed list format. Response was: {repr(batch_result[:200])}")
+                    else:
+                        print(f"Auto Memory: Batch consolidation parsing failed: {e}")
+                    # Fall back to individual processing
                 except Exception as e:
                     print(f"Auto Memory: Batch consolidation failed: {e}")
                     # Fall back to individual processing
@@ -993,8 +1026,17 @@ Return the final list as a Python list of strings - just the memory text, no ext
             for memory in unique_memories:
                 await self.store_memory(memory, user, body, __user__)
             return True
+        except (ValueError, SyntaxError) as e:
+            # Handle specific parsing errors with more helpful messages
+            if "string did not match the expected pattern" in str(e):
+                print(f"Auto Memory: AI response parsing failed - malformed list format. Response was: {repr(memories[:200])}")
+                return f"AI response format error - unable to parse memory list. Please try again."
+            else:
+                print(f"Auto Memory: Memory parsing failed: {e}")
+                return str(e)
         except Exception as e:
-            return e
+            print(f"Auto Memory: Unexpected error in process_memories: {e}")
+            return str(e)
 
     async def find_similar_memories_text(self, memory: str, user) -> list:
         """Find similar memories using text-based similarity as fallback when vector search fails."""
@@ -1270,8 +1312,16 @@ Examples:
             print(f"Auto Memory: Successfully stored memory: '{memory}'")
             return True
         try:
-            # Parse the consolidated memories first
-            memory_list = ast.literal_eval(consolidated_memories)
+            # Parse the consolidated memories first with better error handling
+            consolidated_cleaned = consolidated_memories.strip()
+            
+            # Remove common AI response prefixes
+            prefixes_to_remove = ["**Correct Output**", "**Output**", "**Response**", "**Result**", "Output:", "Response:", "Result:"]
+            for prefix in prefixes_to_remove:
+                if consolidated_cleaned.startswith(prefix):
+                    consolidated_cleaned = consolidated_cleaned[len(prefix):].strip()
+            
+            memory_list = ast.literal_eval(consolidated_cleaned)
 
             # Only proceed with deletion/addition if consolidation actually happened
             original_facts = [item["fact"] for item in fact_list]
@@ -1303,5 +1353,20 @@ Examples:
                     form_data=AddMemoryForm(content=memory),
                     user=user,
                 )
+        except (ValueError, SyntaxError) as e:
+            # Handle specific parsing errors with more helpful messages
+            if "string did not match the expected pattern" in str(e):
+                print(f"Auto Memory: Consolidation AI response parsing failed - malformed list format. Response was: {repr(consolidated_memories[:200])}")
+                # Fall back to storing without consolidation
+                print(f"Auto Memory: Storing memory without consolidation due to parsing error: '{memory}'")
+                await add_memory(
+                    request=Request(scope={"type": "http", "app": webui_app}),
+                    form_data=AddMemoryForm(content=memory),
+                    user=user,
+                )
+                print(f"Auto Memory: Successfully stored memory without consolidation: '{memory}'")
+                return True
+            else:
+                return f"Memory consolidation parsing error: {str(e)}"
         except Exception as e:
             return f"Unable to consolidate memories: {e}"

@@ -1,6 +1,11 @@
+### 3.2.3: 2025-08-10
+
+* Fix similarity search algorithm to properly identify contradictory memories by focusing on subject matter rather than sentiment words
+
 ### 3.2.2: 2025-08-10
 
 * Fix assistant responses being incorrectly processed for memory extraction when save_assistant_response valve is disabled
+* Fix memory consolidation incorrectly re-saving existing memories with new timestamps when no changes occurred
 
 ### 3.2.1: 2025-07-24
 

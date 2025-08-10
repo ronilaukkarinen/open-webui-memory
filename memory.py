@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.2.2
+version: 3.2.3
 required_open_webui_version: >= 0.5.0
 """
 
@@ -278,7 +278,7 @@ class Filter:
             description="Number of related memories to consider when updating memories",
         )
         related_memories_dist: float = Field(
-            default=0.6,
+            default=0.8,
             description="Distance of memories to consider for updates. Smaller number will be more closely related.",
         )
         save_assistant_response: bool = Field(
@@ -1101,7 +1101,7 @@ Return the final list as a Python list of strings - just the memory text, no ext
             return None
 
     def calculate_text_similarity(self, text1: str, text2: str) -> float:
-        """Calculate simple text similarity between two strings."""
+        """Simple text similarity focusing on word overlap."""
         if not text1 or not text2:
             return 0.0
         
@@ -1113,15 +1113,20 @@ Return the final list as a Python list of strings - just the memory text, no ext
         if text1 in text2 or text2 in text1:
             return 0.8
         
-        # Simple word overlap similarity
-        words1 = set(text1.split())
-        words2 = set(text2.split())
+        # Simple word overlap (case-insensitive)
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
         
         if not words1 or not words2:
             return 0.0
         
         intersection = words1.intersection(words2)
         union = words1.union(words2)
+        
+        # For "User loves strawberries" vs "User hates strawberries":
+        # intersection = {"user", "strawberries"} = 2 words
+        # union = {"user", "loves", "strawberries", "hates"} = 4 words  
+        # similarity = 2/4 = 0.5 (which converts to distance 0.5, well under 0.6 threshold)
         
         return len(intersection) / len(union) if union else 0.0
 
@@ -1138,28 +1143,19 @@ Return the final list as a Python list of strings - just the memory text, no ext
             self.user_valves = __user__.get("valves", self.UserValves())
         
         try:
-            # Try vector search first, fall back to text-based search if it fails
-            related_memories = await query_memory(
-                request=Request(scope={"type": "http", "app": webui_app}),
-                form_data=QueryMemoryForm(
-                    content=memory, k=self.valves.related_memories_n
-                ),
-                user=user,
-            )
+            # Use improved text-based similarity search instead of vector search
+            print(f"Auto Memory: Using improved text-based similarity search for '{memory}'")
+            related_memories = await self.find_similar_memories_text(memory, user)
             
             if related_memories is None:
-                print(f"Auto Memory: Vector search failed, using text-based similarity for '{memory}'")
-                # Use text-based similarity as fallback
-                related_memories = await self.find_similar_memories_text(memory, user)
-                if related_memories is None:
-                    print(f"Auto Memory: Text-based search also failed for '{memory}'. Storing without duplicate detection.")
-                    await add_memory(
-                        request=Request(scope={"type": "http", "app": webui_app}),
-                        form_data=AddMemoryForm(content=memory),
-                        user=user,
-                    )
-                    print(f"Added memory without duplicate detection: {memory}")
-                    return True
+                print(f"Auto Memory: Text-based search failed for '{memory}'. Storing without duplicate detection.")
+                await add_memory(
+                    request=Request(scope={"type": "http", "app": webui_app}),
+                    form_data=AddMemoryForm(content=memory),
+                    user=user,
+                )
+                print(f"Added memory without duplicate detection: {memory}")
+                return True
         except Exception as e:
             return f"Unable to query related memories: {e}"
         try:
@@ -1234,6 +1230,10 @@ Return the final list as a Python list of strings - just the memory text, no ext
         try:
             print(f"Auto Memory: Starting consolidation API call for memory: '{memory}'")
             print(f"Auto Memory: Consolidation input fact_list: {fact_list}")
+            print(f"Auto Memory: Found {len(filtered_data)} similar memories for consolidation")
+            if filtered_data:
+                for item in filtered_data:
+                    print(f"  - Similar memory (distance {item['distance']:.4f}): '{item['fact']}'")
             print(f"Auto Memory: API URL: {self.user_valves.openai_api_url if hasattr(self, 'user_valves') and self.user_valves.openai_api_url else self.valves.openai_api_url}")
             print(f"Auto Memory: Model: {self.user_valves.model if hasattr(self, 'user_valves') and self.user_valves.model else self.valves.model}")
             print(f"Auto Memory: API Key configured: {bool(self.user_valves.api_key if hasattr(self, 'user_valves') and self.user_valves.api_key else self.valves.api_key)}")
@@ -1244,6 +1244,7 @@ Return the final list as a Python list of strings - just the memory text, no ext
                 body=body,
             )
             print(f"Auto Memory: Consolidation API call successful. Response: {consolidated_memories}")
+            print(f"Auto Memory: Raw consolidation response: {repr(consolidated_memories)}")
         except Exception as e:
             print(f"Auto Memory: Consolidation API call failed with error: {e}")
             import traceback
@@ -1328,13 +1329,20 @@ Examples:
             
             memory_list = ast.literal_eval(consolidated_cleaned)
 
-            # Only proceed with deletion/addition if consolidation actually happened
+            # Only proceed with deletion/addition if consolidation actually changed something
             original_facts = [item["fact"] for item in fact_list]
-
-            # Check if consolidation changed anything or if we have related memories to update
-            if len(memory_list) != len(original_facts) or len(filtered_data) > 0:
-                # Consolidation happened OR we have related memories to update
-                print(f"Consolidation or update detected: {len(original_facts)} -> {len(memory_list)} memories")
+            original_facts_set = set(original_facts)
+            memory_list_set = set(memory_list)
+            
+            # Check if consolidation changed anything meaningfully
+            memories_were_consolidated = len(memory_list) < len(original_facts)
+            content_was_changed = original_facts_set != memory_list_set and len(filtered_data) > 0
+            
+            if memories_were_consolidated or content_was_changed:
+                # Real consolidation happened - duplicates/conflicts resolved
+                print(f"Consolidation detected: {len(original_facts)} -> {len(memory_list)} memories")
+                print(f"Original facts: {original_facts}")
+                print(f"Consolidated facts: {memory_list}")
 
                 # Delete the old related memories (but not the new memory being added)
                 if len(filtered_data) > 0:
@@ -1351,8 +1359,8 @@ Examples:
                     )
                     print(f"Added consolidated memory: {item}")
             else:
-                # No consolidation and no related memories - just add the new memory
-                print("No consolidation needed - just adding new memory")
+                # No real consolidation - just add the new memory without touching existing ones
+                print("No consolidation needed - just adding new memory without affecting existing ones")
                 await add_memory(
                     request=Request(scope={"type": "http", "app": webui_app}),
                     form_data=AddMemoryForm(content=memory),

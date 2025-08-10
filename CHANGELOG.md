@@ -1,3 +1,7 @@
+### 3.2.2: 2025-08-10
+
+* Fix assistant responses being incorrectly processed for memory extraction when save_assistant_response valve is disabled
+
 ### 3.2.1: 2025-07-24
 
 * Fix "SyntaxError: The string did not match the expected pattern" notification error

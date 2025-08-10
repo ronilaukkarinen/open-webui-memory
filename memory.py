@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.2.1
+version: 3.2.2
 required_open_webui_version: >= 0.5.0
 """
 
@@ -683,6 +683,11 @@ USER MEMORIES:
                     if i <= len(body["messages"]):
                         message = body["messages"][-i]
                         content = message["content"]
+                        
+                        # Skip assistant messages unless the valve is enabled
+                        if message["role"] == "assistant" and not self.valves.save_assistant_response:
+                            continue
+                        
                         # Remove memory context if it was injected from any user message
                         if message["role"] == "user" and "<MEMORY_CONTEXT>" in content:
                             # More robust removal - handle both start and embedded contexts

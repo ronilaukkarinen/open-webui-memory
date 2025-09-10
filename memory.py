@@ -3,11 +3,12 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.2.3
+version: 3.2.4
 required_open_webui_version: >= 0.5.0
 """
 
 import ast
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -925,25 +926,54 @@ USER MEMORIES:
         # Debug logging for API calls
         print(f"MEMORY API DEBUG: Making request to {url}")
         print(f"MEMORY API DEBUG: Using LLM model for memory identification: {model}")
-        print(f"MEMORY API DEBUG: Request payload: {json.dumps(payload, indent=2)}")
 
         try:
             async with aiohttp.ClientSession() as session:
                 print(f"MEMORY API DEBUG: Sending POST request...")
-                response = await session.post(url, headers=headers, json=payload)
+                response = await session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30))
                 print(f"MEMORY API DEBUG: Response status: {response.status}")
                 response.raise_for_status()
-                json_content = await response.json()
-                print(f"MEMORY API DEBUG: Response received successfully")
-            return json_content["choices"][0]["message"]["content"]
-        except ClientError as e:
+                
+                # Get response text first for validation
+                response_text = await response.text()
+                print(f"MEMORY API DEBUG: Response text length: {len(response_text)}")
+                
+                # Validate response is not empty
+                if not response_text or response_text.strip() == "":
+                    print(f"MEMORY API ERROR: Empty response received")
+                    raise Exception("Empty response from API")
+                
+                # Try to parse JSON with proper error handling
+                try:
+                    json_content = json.loads(response_text)
+                    print(f"MEMORY API DEBUG: JSON parsed successfully")
+                except json.JSONDecodeError as e:
+                    print(f"MEMORY API ERROR: JSON decode error: {e}")
+                    print(f"MEMORY API ERROR: Response text: {response_text[:500]}...")
+                    raise Exception(f"Invalid JSON response: {str(e)}")
+                
+                # Validate expected structure
+                if "choices" not in json_content or not json_content["choices"]:
+                    print(f"MEMORY API ERROR: Missing choices in response: {json_content}")
+                    raise Exception("Invalid API response structure - missing choices")
+                
+                if "message" not in json_content["choices"][0] or "content" not in json_content["choices"][0]["message"]:
+                    print(f"MEMORY API ERROR: Missing message content in response")
+                    raise Exception("Invalid API response structure - missing message content")
+                
+                return json_content["choices"][0]["message"]["content"]
+                
+        except aiohttp.ClientError as e:
             # Fixed error handling
             error_msg = str(e)
             print(f"MEMORY API ERROR: HTTP error: {error_msg}")
             raise Exception(f"Http error: {error_msg}")
+        except asyncio.TimeoutError:
+            print(f"MEMORY API ERROR: Request timeout")
+            raise Exception("API request timeout after 30 seconds")
         except Exception as e:
             print(f"MEMORY API ERROR: Unexpected error: {str(e)}")
-            raise Exception(f"Unexpected error: {str(e)}")
+            raise Exception(f"API error: {str(e)}")
 
     async def process_memories(
         self,
@@ -963,8 +993,38 @@ USER MEMORIES:
                 if memories_cleaned.startswith(prefix):
                     memories_cleaned = memories_cleaned[len(prefix):].strip()
             
-            memory_list = ast.literal_eval(memories_cleaned)
+            # Validate the cleaned response looks like a list
+            if not memories_cleaned.startswith("[") or not memories_cleaned.endswith("]"):
+                print(f"Auto Memory: Response doesn't look like a list: {repr(memories_cleaned[:100])}")
+                raise ValueError(f"AI response is not a valid list format: {memories_cleaned[:100]}...")
+
+            # Try parsing with comprehensive error handling
+            try:
+                memory_list = ast.literal_eval(memories_cleaned)
+                if not isinstance(memory_list, list):
+                    print(f"Auto Memory: Parsed result is not a list: {type(memory_list)}")
+                    raise ValueError(f"Expected list, got {type(memory_list)}")
+            except (ValueError, SyntaxError) as e:
+                print(f"Auto Memory: ast.literal_eval failed: {e}")
+                print(f"Auto Memory: Failed to parse: {repr(memories_cleaned[:200])}")
+                
+                # Try JSON parsing as fallback
+                try:
+                    memory_list = json.loads(memories_cleaned)
+                    if not isinstance(memory_list, list):
+                        raise ValueError(f"Expected list, got {type(memory_list)}")
+                    print(f"Auto Memory: Fallback JSON parsing succeeded")
+                except json.JSONDecodeError as json_e:
+                    print(f"Auto Memory: JSON fallback also failed: {json_e}")
+                    raise Exception(f"Unable to parse AI response as list. AST error: {e}, JSON error: {json_e}")
+            
             print(f"Auto Memory: identified {len(memory_list)} new memories")
+
+            # Validate all items are strings
+            for i, memory in enumerate(memory_list):
+                if not isinstance(memory, str):
+                    print(f"Auto Memory: Memory item {i} is not a string: {type(memory)}")
+                    memory_list[i] = str(memory)
 
             # Pre-process to remove exact duplicates within the same batch
             unique_memories = []
@@ -1000,7 +1060,7 @@ Return the final list as a Python list of strings - just the memory text, no ext
                         body=body,
                     )
                     
-                    # Safely parse batch consolidation result
+                    # Safely parse batch consolidation result using the same safe parsing
                     batch_result_cleaned = batch_result.strip()
                     
                     # Remove common AI response prefixes
@@ -1009,7 +1069,21 @@ Return the final list as a Python list of strings - just the memory text, no ext
                         if batch_result_cleaned.startswith(prefix):
                             batch_result_cleaned = batch_result_cleaned[len(prefix):].strip()
                     
-                    batch_memories = ast.literal_eval(batch_result_cleaned)
+                    # Parse batch consolidation result safely
+                    try:
+                        batch_memories = ast.literal_eval(batch_result_cleaned)
+                        if not isinstance(batch_memories, list):
+                            raise ValueError(f"Expected list, got {type(batch_memories)}")
+                    except (ValueError, SyntaxError) as e:
+                        # Try JSON fallback
+                        try:
+                            batch_memories = json.loads(batch_result_cleaned)
+                            if not isinstance(batch_memories, list):
+                                raise ValueError(f"Expected list, got {type(batch_memories)}")
+                        except json.JSONDecodeError:
+                            print(f"Auto Memory: Batch consolidation parsing failed: {e}")
+                            # Fall back to individual processing
+                            batch_memories = unique_memories
                     print(f"Auto Memory: Batch consolidation reduced {len(unique_memories)} memories to {len(batch_memories)}")
                     
                     # Now process the consolidated batch
@@ -1031,17 +1105,11 @@ Return the final list as a Python list of strings - just the memory text, no ext
             for memory in unique_memories:
                 await self.store_memory(memory, user, body, __user__)
             return True
-        except (ValueError, SyntaxError) as e:
-            # Handle specific parsing errors with more helpful messages
-            if "string did not match the expected pattern" in str(e):
-                print(f"Auto Memory: AI response parsing failed - malformed list format. Response was: {repr(memories[:200])}")
-                return f"AI response format error - unable to parse memory list. Please try again."
-            else:
-                print(f"Auto Memory: Memory parsing failed: {e}")
-                return str(e)
         except Exception as e:
             print(f"Auto Memory: Unexpected error in process_memories: {e}")
-            return str(e)
+            import traceback
+            print(f"Auto Memory: Traceback: {traceback.format_exc()}")
+            return False
 
     async def find_similar_memories_text(self, memory: str, user) -> list:
         """Find similar memories using text-based similarity as fallback when vector search fails."""

@@ -1,3 +1,7 @@
+### 3.2.4: 2025-09-10
+
+* Attempt to fix "SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input"
+
 ### 3.2.3: 2025-08-10
 
 * Fix similarity search algorithm to properly identify contradictory memories by focusing on subject matter rather than sentiment words

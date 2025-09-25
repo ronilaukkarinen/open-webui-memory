@@ -1,3 +1,8 @@
+### 3.2.5: 2025-09-25
+
+* Remove API timeouts to fix memory timeout errors with large memory sets
+* Fix crashes by adding graceful error handling for malformed AI responses
+
 ### 3.2.4: 2025-09-10
 
 * Attempt to fix "SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input"

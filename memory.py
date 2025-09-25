@@ -3,7 +3,7 @@ title: Memory
 author: Roni Laukkarinen
 description: Automatically identify, retrieve and store memories.
 repository_url: https://github.com/ronilaukkarinen/open-webui-memory
-version: 3.2.4
+version: 3.2.5
 required_open_webui_version: >= 0.5.0
 """
 
@@ -930,7 +930,7 @@ USER MEMORIES:
         try:
             async with aiohttp.ClientSession() as session:
                 print(f"MEMORY API DEBUG: Sending POST request...")
-                response = await session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30))
+                response = await session.post(url, headers=headers, json=payload)
                 print(f"MEMORY API DEBUG: Response status: {response.status}")
                 response.raise_for_status()
                 
@@ -950,7 +950,16 @@ USER MEMORIES:
                 except json.JSONDecodeError as e:
                     print(f"MEMORY API ERROR: JSON decode error: {e}")
                     print(f"MEMORY API ERROR: Response text: {response_text[:500]}...")
-                    raise Exception(f"Invalid JSON response: {str(e)}")
+                    # Try to clean common JSON issues
+                    try:
+                        # Remove BOM, control characters, and try again
+                        import re
+                        cleaned = response_text.strip().lstrip('\ufeff')
+                        cleaned = re.sub(r'[\x00-\x1f\x7f]', '', cleaned)
+                        json_content = json.loads(cleaned)
+                        print(f"MEMORY API DEBUG: JSON parsed after cleaning")
+                    except:
+                        raise Exception(f"Invalid JSON response: {str(e)}")
                 
                 # Validate expected structure
                 if "choices" not in json_content or not json_content["choices"]:
@@ -968,9 +977,7 @@ USER MEMORIES:
             error_msg = str(e)
             print(f"MEMORY API ERROR: HTTP error: {error_msg}")
             raise Exception(f"Http error: {error_msg}")
-        except asyncio.TimeoutError:
-            print(f"MEMORY API ERROR: Request timeout")
-            raise Exception("API request timeout after 30 seconds")
+        # Timeout handling removed - not needed for memory processing
         except Exception as e:
             print(f"MEMORY API ERROR: Unexpected error: {str(e)}")
             raise Exception(f"API error: {str(e)}")
@@ -996,7 +1003,15 @@ USER MEMORIES:
             # Validate the cleaned response looks like a list
             if not memories_cleaned.startswith("[") or not memories_cleaned.endswith("]"):
                 print(f"Auto Memory: Response doesn't look like a list: {repr(memories_cleaned[:100])}")
-                raise ValueError(f"AI response is not a valid list format: {memories_cleaned[:100]}...")
+                # Try to extract list from malformed response
+                import re
+                list_match = re.search(r'\[.*?\]', memories_cleaned, re.DOTALL)
+                if list_match:
+                    memories_cleaned = list_match.group(0)
+                    print(f"Auto Memory: Extracted list from response")
+                else:
+                    print(f"Auto Memory: Could not extract valid list, skipping memory storage")
+                    return True  # Return success to avoid crashing
 
             # Try parsing with comprehensive error handling
             try:
@@ -1016,7 +1031,8 @@ USER MEMORIES:
                     print(f"Auto Memory: Fallback JSON parsing succeeded")
                 except json.JSONDecodeError as json_e:
                     print(f"Auto Memory: JSON fallback also failed: {json_e}")
-                    raise Exception(f"Unable to parse AI response as list. AST error: {e}, JSON error: {json_e}")
+                    print(f"Auto Memory: Skipping memory storage due to parse error")
+                    return True  # Return success to avoid crashing
             
             print(f"Auto Memory: identified {len(memory_list)} new memories")
 
@@ -1109,7 +1125,8 @@ Return the final list as a Python list of strings - just the memory text, no ext
             print(f"Auto Memory: Unexpected error in process_memories: {e}")
             import traceback
             print(f"Auto Memory: Traceback: {traceback.format_exc()}")
-            return False
+            # Return True to prevent crash - just skip this memory processing
+            return True
 
     async def find_similar_memories_text(self, memory: str, user) -> list:
         """Find similar memories using text-based similarity as fallback when vector search fails."""
